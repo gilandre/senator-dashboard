@@ -1,4 +1,5 @@
 <?php
+$pageTitle = 'Importation de Données';
 $currentPage = 'import';
 require_once __DIR__ . '/../layouts/app.php';
 ?>

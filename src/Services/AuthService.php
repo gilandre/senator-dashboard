@@ -27,10 +27,16 @@ class AuthService
         return isset($_SESSION['user_id']);
     }
 
-    public function authenticate($username, $password)
+    public function authenticate($login, $password)
     {
         try {
-            $user = $this->user->findByUsername($username);
+            // Essayer d'abord par username
+            $user = $this->user->findByUsername($login);
+            
+            // Si pas trouvé, essayer par email
+            if (!$user) {
+                $user = $this->user->findByEmail($login);
+            }
             
             if (!$user) {
                 return null;
@@ -216,13 +222,28 @@ class AuthService
     private function incrementFailedAttempts($userId)
     {
         try {
-            $stmt = $this->db->prepare("
-                UPDATE users
-                SET failed_attempts = failed_attempts + 1,
-                    last_failed_attempt = NOW()
-                WHERE id = :user_id
-            ");
-            $stmt->execute(['user_id' => $userId]);
+            // Vérification simplifiée pour SQLite/MySQL
+            try {
+                // Plutôt que de chercher la colonne, on essaie d'exécuter la requête
+                // et on attrape une éventuelle exception
+                $stmt = $this->db->prepare("
+                    UPDATE users
+                    SET failed_attempts = failed_attempts + 1,
+                        last_failed_attempt = datetime('now')
+                    WHERE id = :user_id
+                ");
+                $stmt->execute(['user_id' => $userId]);
+                
+                error_log("Incrémentation des tentatives échouées pour l'utilisateur ID: " . $userId);
+            } catch (PDOException $e) {
+                // Si erreur de colonne manquante, on log simplement
+                if (strpos($e->getMessage(), "failed_attempts") !== false) {
+                    error_log("Colonne 'failed_attempts' non trouvée dans la table users - fonctionnalité désactivée");
+                } else {
+                    // Autres erreurs SQL
+                    throw $e;
+                }
+            }
         } catch (Exception $e) {
             error_log("Erreur lors de l'incrémentation des tentatives échouées : " . $e->getMessage());
         }
@@ -231,13 +252,28 @@ class AuthService
     private function resetFailedAttempts($userId)
     {
         try {
-            $stmt = $this->db->prepare("
-                UPDATE users
-                SET failed_attempts = 0,
-                    last_failed_attempt = NULL
-                WHERE id = :user_id
-            ");
-            $stmt->execute(['user_id' => $userId]);
+            // Vérification simplifiée pour SQLite/MySQL
+            try {
+                // Plutôt que de chercher la colonne, on essaie d'exécuter la requête
+                // et on attrape une éventuelle exception
+                $stmt = $this->db->prepare("
+                    UPDATE users
+                    SET failed_attempts = 0,
+                        last_failed_attempt = NULL
+                    WHERE id = :user_id
+                ");
+                $stmt->execute(['user_id' => $userId]);
+                
+                error_log("Réinitialisation des tentatives échouées pour l'utilisateur ID: " . $userId);
+            } catch (PDOException $e) {
+                // Si erreur de colonne manquante, on log simplement
+                if (strpos($e->getMessage(), "failed_attempts") !== false) {
+                    error_log("Colonne 'failed_attempts' non trouvée dans la table users - fonctionnalité désactivée");
+                } else {
+                    // Autres erreurs SQL
+                    throw $e;
+                }
+            }
         } catch (Exception $e) {
             error_log("Erreur lors de la réinitialisation des tentatives échouées : " . $e->getMessage());
         }
@@ -256,16 +292,33 @@ class AuthService
                 throw new Exception("Ce compte est déjà actif.");
             }
             
-            $stmt = $this->db->prepare("
-                UPDATE users
-                SET is_active = 1,
-                    is_locked = 0,
-                    failed_attempts = 0,
-                    last_failed_attempt = NULL
-                WHERE id = :user_id
-            ");
-            
-            $stmt->execute(['user_id' => $user->getId()]);
+            try {
+                $stmt = $this->db->prepare("
+                    UPDATE users
+                    SET is_active = 1,
+                        is_locked = 0,
+                        failed_attempts = 0,
+                        last_failed_attempt = NULL
+                    WHERE id = :user_id
+                ");
+                
+                $stmt->execute(['user_id' => $user->getId()]);
+            } catch (PDOException $e) {
+                // Si erreur de colonne manquante, on utilise une requête alternative
+                if (strpos($e->getMessage(), "failed_attempts") !== false) {
+                    $stmt = $this->db->prepare("
+                        UPDATE users
+                        SET is_active = 1,
+                            is_locked = 0
+                        WHERE id = :user_id
+                    ");
+                    
+                    $stmt->execute(['user_id' => $user->getId()]);
+                } else {
+                    // Autres erreurs SQL
+                    throw $e;
+                }
+            }
             
             return [
                 'success' => true,

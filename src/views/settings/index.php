@@ -1,4 +1,10 @@
 <?php
+$pageTitle = 'Paramètres';
+$currentPage = 'settings';
+
+// Début du contenu de la page
+ob_start();
+
 $title = 'Paramètres - SENATOR';
 ?>
 
@@ -172,4 +178,11 @@ $title = 'Paramètres - SENATOR';
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+<?php
+// Fin du contenu de la page
+$content = ob_get_clean();
+
+// Inclure le template de la page
+include 'templates/layout.php'; 

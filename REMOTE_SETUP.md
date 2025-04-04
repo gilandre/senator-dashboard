@@ -9,7 +9,7 @@ Pour publier ce dépôt Git sur un serveur distant (comme GitHub, GitLab, Bitbuc
 
 3. Ajoutez le dépôt distant à votre dépôt local :
 ```bash
-git remote add origin https://github.com/votre-utilisateur/senator-dashboard.git
+git remote add origin https://github.com/gilandre/senator-dashboard.git
 ```
 
 4. Poussez les branches principales :
@@ -87,7 +87,7 @@ ssh -T git@bitbucket.org
 
 5. Mettez à jour l'URL du dépôt distant pour utiliser SSH :
 ```bash
-git remote set-url origin git@github.com:votre-utilisateur/senator-dashboard.git
+git remote set-url origin git@github.com:gilandre/senator-dashboard.git
 ```
 
 ## Protection des branches

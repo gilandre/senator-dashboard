@@ -1,3 +1,10 @@
+<?php
+$pageTitle = 'Mon Profil';
+$currentPage = 'profile';
+
+// Début du contenu de la page
+ob_start();
+?>
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -176,4 +183,10 @@
         });
     </script>
 </body>
-</html> 
+</html>
+<?php
+// Fin du contenu de la page
+$content = ob_get_clean();
+
+// Inclure le template de base
+require_once '../templates/base.php'; 

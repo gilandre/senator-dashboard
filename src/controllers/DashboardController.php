@@ -13,12 +13,24 @@ class DashboardController extends Controller
     {
         parent::__construct();
         $this->dashboardService = new DashboardService();
+        $this->layout = 'layouts/app'; // Définir explicitement le layout à utiliser
     }
 
     public function index(): void
     {
-        // Récupération de la date sélectionnée (par défaut aujourd'hui)
-        $selectedDate = $_GET['date'] ?? date('Y-m-d');
+        // Vérifier que l'utilisateur est connecté
+        $this->requireLogin();
+        
+        // En mode développement
+        putenv('APP_ENV=development');
+        
+        // Récupération de la dernière date disponible dans la base de données
+        $latestDate = $this->dashboardService->getLatestDate();
+        error_log("Controller - Date la plus récente disponible: " . $latestDate);
+        
+        // Récupération de la date sélectionnée (par défaut la dernière date disponible)
+        $selectedDate = $_GET['date'] ?? $latestDate;
+        error_log("Controller - Date sélectionnée pour l'affichage: " . $selectedDate);
         
         // Calcul des dates pour la semaine
         $startDate = date('Y-m-d', strtotime($selectedDate . ' -6 days'));
@@ -26,6 +38,8 @@ class DashboardController extends Controller
 
         // Récupération des statistiques
         $dailyStats = $this->dashboardService->getDailyStats($selectedDate);
+        error_log("Controller - Statistiques récupérées pour le jour: " . json_encode($dailyStats));
+        
         $weeklyStats = $this->dashboardService->getWeeklyStats($startDate, $endDate);
         $topLocations = $this->dashboardService->getTopLocations($selectedDate);
         $groupStats = $this->dashboardService->getGroupStats($selectedDate);
@@ -59,6 +73,7 @@ class DashboardController extends Controller
         $this->view('dashboard/index', [
             'currentPage' => 'dashboard',
             'selectedDate' => $selectedDate,
+            'latestDate' => $latestDate,
             'dailyStats' => $dailyStats,
             'weeklyStats' => $weeklyStats,
             'topLocations' => $topLocations,
@@ -66,13 +81,24 @@ class DashboardController extends Controller
             'peakHours' => $peakHours,
             'chartData' => $chartData
         ]);
+
+        // Log pour déboguer
+        $logMessage = "Données passées à la vue dashboard:\n";
+        $logMessage .= "- selectedDate: " . $selectedDate . "\n";
+        $logMessage .= "- latestDate: " . $latestDate . "\n";
+        $logMessage .= "- dailyStats: " . json_encode($dailyStats) . "\n";
+        $logMessage .= "- chartData weekly labels: " . json_encode($chartData['weekly']['labels']) . "\n";
+        $logMessage .= "- chartData weekly entries: " . json_encode($chartData['weekly']['entries']) . "\n";
+        error_log($logMessage);
     }
 
     public function getData(): void
     {
         header('Content-Type: application/json');
         
-        $date = $_GET['date'] ?? date('Y-m-d');
+        // Utiliser la dernière date disponible par défaut
+        $latestDate = $this->dashboardService->getLatestDate();
+        $date = $_GET['date'] ?? $latestDate;
         $type = $_GET['type'] ?? 'daily';
 
         $data = match($type) {

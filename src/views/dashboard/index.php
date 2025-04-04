@@ -29,15 +29,16 @@ ob_start();
 ?>
 
 <div class="container-fluid">
-    <!-- Header avec titre et sélecteur de date -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0 text-gray-800">Tableau de bord</h1>
-        <div class="date-filter shadow-sm rounded p-2 bg-white">
-            <div class="input-group">
-                <input type="date" id="dateSelector" class="form-control form-control-sm border-0" value="<?php echo htmlspecialchars($selectedDate); ?>">
-                <button class="btn btn-sm btn-outline-primary" onclick="updateDashboard()">
-                    <i class="fas fa-sync-alt"></i> Actualiser
-                </button>
+    <!-- Header avec sélecteur de date uniquement -->
+    <div class="page-header mb-4">
+        <div class="d-flex align-items-center flex-wrap">
+            <div class="date-filter shadow-sm rounded ms-0 p-2 bg-white">
+                <div class="input-group">
+                    <input type="date" id="dateSelector" class="form-control form-control-sm border-0" value="<?php echo htmlspecialchars($selectedDate); ?>">
+                    <button class="btn btn-sm btn-outline-primary" onclick="updateDashboard()">
+                        <i class="fas fa-sync-alt"></i> Actualiser
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -105,18 +106,6 @@ ob_start();
             </div>
         </div>
     </div>
-
-    <!-- Debug Info (visible uniquement en mode développement) -->
-    <?php if (getenv('APP_ENV') !== 'production'): ?>
-    <div class="alert alert-info small">
-        <h6>Debug Information</h6>
-        <pre><?php 
-            echo "Date sélectionnée: " . htmlspecialchars($selectedDate ?? 'non définie') . "\n";
-            echo "Date la plus récente: " . htmlspecialchars($latestDate ?? 'non définie') . "\n";
-            echo "Statistiques quotidiennes: " . htmlspecialchars(print_r($dailyStats, true));
-        ?></pre>
-    </div>
-    <?php endif; ?>
 
     <!-- Charts -->
     <div class="row">

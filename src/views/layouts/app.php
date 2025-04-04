@@ -76,17 +76,42 @@
                         <i class="fas fa-bars"></i>
                     </button>
                     
+                    <!-- Titre de la page dans le top menu -->
+                    <div class="page-title-display">
+                        <?php if (isset($pageTitle)): ?>
+                            <span class="page-title-text"><?php echo htmlspecialchars($pageTitle); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    
                     <div class="ms-auto">
-                        <div class="dropdown">
-                            <button class="btn btn-link dropdown-toggle" type="button" id="userDropdown" data-bs-toggle="dropdown">
+                        <!-- NOUVELLE IMPLÉMENTATION DU MENU UTILISATEUR -->
+                        <div class="dropdown-container">
+                            <button type="button" id="userDropdown" class="user-icon-btn">
                                 <i class="fas fa-user-circle"></i>
-                                <?php echo isset($auth) && $auth->getUser() ? htmlspecialchars($auth->getUser()->getUsername()) : 'Utilisateur'; ?>
                             </button>
-                            <ul class="dropdown-menu dropdown-menu-end">
-                                <li><a class="dropdown-item" href="/profile"><i class="fas fa-user"></i> Profil</a></li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt"></i> Déconnexion</a></li>
-                            </ul>
+                            <div id="userDropdownMenu" class="custom-dropdown-menu">
+                                <!-- En-tête du profil utilisateur -->
+                                <div class="dropdown-profile-header">
+                                    <div class="dropdown-avatar">
+                                        <i class="fas fa-user-circle"></i>
+                                    </div>
+                                    <div class="dropdown-user-info">
+                                        <span class="dropdown-username"><?php echo isset($auth) && $auth->getUser() ? htmlspecialchars($auth->getUser()->getUsername()) : 'Utilisateur'; ?></span>
+                                        <span class="dropdown-role"><?php echo isset($auth) && $auth->getUser() ? htmlspecialchars($auth->getUser()->getRole()) : 'Invité'; ?></span>
+                                    </div>
+                                </div>
+                                <div class="dropdown-divider"></div>
+                                <a href="/profile" class="custom-dropdown-item">
+                                    <i class="fas fa-user"></i> Profil
+                                </a>
+                                <a href="/settings" class="custom-dropdown-item">
+                                    <i class="fas fa-cog"></i> Paramètres
+                                </a>
+                                <div class="dropdown-divider"></div>
+                                <a href="/logout" class="custom-dropdown-item">
+                                    <i class="fas fa-sign-out-alt"></i> Déconnexion
+                                </a>
+                            </div>
                         </div>
                     </div>
                 </div>

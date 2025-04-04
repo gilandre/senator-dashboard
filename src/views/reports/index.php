@@ -1,4 +1,5 @@
 <?php
+$pageTitle = 'Rapports';
 $currentPage = 'reports';
 require_once __DIR__ . '/../layouts/app.php';
 ?>

@@ -48,12 +48,25 @@ class AuthController extends Controller
         $remember = isset($_POST['remember']);
 
         try {
+            error_log("Tentative de connexion avec: " . $username);
+            
+            // Authentification avec le nom d'utilisateur
             $user = $this->authService->authenticate($username, $password);
             
             if ($user) {
-                Session::set('user_id', $user->getId());
-                Session::set('username', $user->getUsername());
-                Session::set('role', $user->getRole());
+                error_log("Authentification réussie pour l'utilisateur: " . $user->getId());
+                
+                // Démarrer la session si ce n'est pas déjà fait
+                if (session_status() !== PHP_SESSION_ACTIVE) {
+                    session_start();
+                }
+                
+                // Stocker directement dans $_SESSION pour éviter les problèmes avec la classe Session
+                $_SESSION['user_id'] = $user->getId();
+                $_SESSION['username'] = $user->getUsername();
+                $_SESSION['role'] = $user->getRole();
+                
+                error_log("Session après authentification: " . print_r($_SESSION, true));
                 
                 if ($remember) {
                     $token = $this->authService->generateRememberToken($user->getId());
@@ -63,13 +76,14 @@ class AuthController extends Controller
                 header('Location: /dashboard');
                 exit;
             } else {
-                Session::setFlash('error', 'Identifiants incorrects');
+                error_log("Authentification échouée pour: " . $username);
+                $_SESSION['flash_error'] = 'Identifiants incorrects';
                 header('Location: /login');
                 exit;
             }
         } catch (Exception $e) {
             error_log("Erreur lors de la connexion : " . $e->getMessage());
-            Session::setFlash('error', 'Une erreur est survenue lors de la connexion');
+            $_SESSION['flash_error'] = 'Une erreur est survenue lors de la connexion';
             header('Location: /login');
             exit;
         }
@@ -77,8 +91,35 @@ class AuthController extends Controller
 
     public function logout()
     {
-        Session::destroy();
-        setcookie('remember_token', '', time() - 3600, '/', '', true, true);
+        // Détruire correctement la session
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            // Supprimer toutes les variables de session
+            $_SESSION = array();
+            
+            // Supprimer le cookie de session
+            if (ini_get("session.use_cookies")) {
+                $params = session_get_cookie_params();
+                setcookie(
+                    session_name(),
+                    '',
+                    time() - 42000,
+                    $params["path"],
+                    $params["domain"],
+                    $params["secure"],
+                    $params["httponly"]
+                );
+            }
+            
+            // Détruire la session
+            session_destroy();
+        }
+        
+        // Supprimer le cookie de mémorisation si présent
+        if (isset($_COOKIE['remember_token'])) {
+            setcookie('remember_token', '', time() - 3600, '/', '', true, true);
+        }
+        
+        // Rediriger vers la page de connexion
         header('Location: /login');
         exit;
     }

@@ -1,3 +1,11 @@
+<?php
+$pageTitle = 'Connexion';
+$currentPage = 'login';
+$hideGlobalTopbar = true; // Masquer la topbar globale sur la page de login
+
+// Début du contenu de la page
+ob_start();
+?>
 <form method="POST" action="/login" class="needs-validation" novalidate>
     <div class="mb-4">
         <label for="username" class="form-label fw-medium">Nom d'utilisateur</label>
