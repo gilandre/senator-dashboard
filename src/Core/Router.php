@@ -162,10 +162,12 @@ class Router
         $this->get("/users/{id}/edit", ["UserController", "edit"]);
         $this->put("/users/{id}", ["UserController", "update"]);
         $this->delete("/users/{id}", ["UserController", "delete"]);
+        $this->get("/settings", ["SettingsController", "index"]);
+        $this->post("/settings/update", ["SettingsController", "update"]);
     }
 
     public function getParams()
     {
         return $this->params;
     }
-}
+} 

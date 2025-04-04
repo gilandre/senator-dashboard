@@ -90,6 +90,25 @@ $title = 'Paramètres - SENATOR';
                             </div>
                         </div>
 
+                        <!-- Heures de travail -->
+                        <h6 class="mb-3">Heures de travail</h6>
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="work_day_start_time" class="form-label">Heure de début de journée</label>
+                                    <input type="time" class="form-control" id="work_day_start_time" name="work_day_start_time" value="<?= substr($settings['work_day_start_time'], 0, 5) ?>">
+                                    <div class="form-text">Format: HH:MM</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="work_day_end_time" class="form-label">Heure de fin de journée</label>
+                                    <input type="time" class="form-control" id="work_day_end_time" name="work_day_end_time" value="<?= substr($settings['work_day_end_time'], 0, 5) ?>">
+                                    <div class="form-text">Format: HH:MM</div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Paramètres de fichiers -->
                         <h6 class="mb-3">Fichiers</h6>
                         <div class="row mb-4">

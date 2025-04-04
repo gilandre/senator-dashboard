@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS user_profiles (
     FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
 );
 
+-- Table des paramètres système
+CREATE TABLE IF NOT EXISTS settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(50) NOT NULL UNIQUE,
+    setting_value VARCHAR(255) NOT NULL,
+    description TEXT,
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Insertion des paramètres par défaut
+INSERT INTO settings (setting_key, setting_value, description, is_public) VALUES
+('work_day_start_time', '09:00:00', 'Heure de début de la journée de travail', TRUE),
+('work_day_end_time', '18:00:00', 'Heure de fin de la journée de travail', TRUE),
+('site_name', 'SENATOR', 'Nom du site', TRUE),
+('site_description', 'Système de gestion des accès', 'Description du site', TRUE),
+('timezone', 'Europe/Paris', 'Fuseau horaire', TRUE),
+('max_login_attempts', '3', 'Nombre maximum de tentatives de connexion', FALSE);
+
 -- Insertion des habilitations de base
 INSERT INTO permissions (name, description) VALUES
 -- Gestion des utilisateurs

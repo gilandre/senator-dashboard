@@ -5,14 +5,19 @@ namespace App\Services;
 use App\Core\Database;
 use PDO;
 use PDOException;
+use DateTime;
+use DateInterval;
+use App\Services\ConfigService;
 
 class DashboardService
 {
-    private $db;
+    private PDO $db;
+    private ConfigService $configService;
 
     public function __construct()
     {
         $this->db = Database::getInstance()->getConnection();
+        $this->configService = ConfigService::getInstance();
     }
 
     /**
@@ -745,14 +750,24 @@ class DashboardService
     }
 
     /**
-     * Récupère les données sur le temps de travail
+     * Récupère les données sur les heures de travail
      * 
-     * @param string $date La date au format Y-m-d
-     * @return array Répartition des heures de travail
+     * @param string $date Date au format Y-m-d
+     * @return array Données formatées pour Chart.js
      */
     public function getWorkingHoursData(string $date): array
     {
         try {
+            // Récupérer les paramètres des heures de travail
+            $workDayStartTime = $this->configService->getWorkDayStartTime(); // Format: '09:00:00'
+            $workDayEndTime = $this->configService->getWorkDayEndTime();     // Format: '18:00:00'
+            
+            // Convertir en heures pour les calculs
+            $startTimeObj = new DateTime($workDayStartTime);
+            $endTimeObj = new DateTime($workDayEndTime);
+            
+            // Utiliser ces valeurs pour les calculs de durée de présence...
+            
             // Requête pour obtenir le temps de travail par employé
             $query = "
                 SELECT 
@@ -804,13 +819,33 @@ class DashboardService
             
             return [
                 'labels' => array_keys($categories),
-                'data' => array_values($categories)
+                'datasets' => [
+                    [
+                        'label' => 'Heures de travail',
+                        'data' => array_values($categories),
+                        'backgroundColor' => 'rgba(75, 192, 192, 0.2)',
+                        'borderColor' => 'rgba(75, 192, 192, 1)',
+                        'borderWidth' => 1
+                    ]
+                ],
+                'meta' => [
+                    'workDayStart' => $workDayStartTime,
+                    'workDayEnd' => $workDayEndTime
+                ]
             ];
         } catch (PDOException $e) {
-            error_log("Erreur lors du calcul de la répartition des heures de travail: " . $e->getMessage());
+            error_log('Erreur lors de la récupération des données de temps de travail: ' . $e->getMessage());
             return [
                 'labels' => [],
-                'data' => []
+                'datasets' => [
+                    [
+                        'label' => 'Erreur',
+                        'data' => [],
+                        'backgroundColor' => 'rgba(255, 99, 132, 0.2)',
+                        'borderColor' => 'rgba(255, 99, 132, 1)',
+                        'borderWidth' => 1
+                    ]
+                ]
             ];
         }
     }
