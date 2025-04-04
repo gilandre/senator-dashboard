@@ -333,10 +333,34 @@ function loadWorkingHoursData(date) {
             }
             
             try {
-                // Créer le nouveau graphique
-                window.workingHoursChart = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: {
+                // Vérifier le format des données (compatibilité avec l'ancien et le nouveau format)
+                let chartData;
+                if (data.datasets) {
+                    // Nouveau format
+                    chartData = {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.datasets[0].data,
+                            backgroundColor: [
+                                'rgba(255, 99, 132, 0.7)',
+                                'rgba(255, 159, 64, 0.7)',
+                                'rgba(255, 205, 86, 0.7)',
+                                'rgba(75, 192, 192, 0.7)',
+                                'rgba(54, 162, 235, 0.7)'
+                            ],
+                            borderColor: [
+                                'rgba(255, 99, 132, 1)',
+                                'rgba(255, 159, 64, 1)',
+                                'rgba(255, 205, 86, 1)',
+                                'rgba(75, 192, 192, 1)',
+                                'rgba(54, 162, 235, 1)'
+                            ],
+                            borderWidth: 1
+                        }]
+                    };
+                } else {
+                    // Ancien format
+                    chartData = {
                         labels: data.labels,
                         datasets: [{
                             data: data.data,
@@ -356,7 +380,25 @@ function loadWorkingHoursData(date) {
                             ],
                             borderWidth: 1
                         }]
-                    },
+                    };
+                }
+                
+                // Afficher les informations sur les heures de travail si disponibles
+                if (data.meta && data.meta.workDayStart && data.meta.workDayEnd) {
+                    const workTimeInfo = document.querySelector('#workingHoursChartCard .card-footer');
+                    if (workTimeInfo) {
+                        // Formater les heures pour l'affichage (supprimer les secondes)
+                        const startTime = data.meta.workDayStart.substr(0, 5);
+                        const endTime = data.meta.workDayEnd.substr(0, 5);
+                        workTimeInfo.innerHTML = `<small class="text-muted">Heures de travail configurées: ${startTime} - ${endTime}</small>`;
+                        workTimeInfo.style.display = 'block';
+                    }
+                }
+                
+                // Créer le nouveau graphique
+                window.workingHoursChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: chartData,
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
@@ -445,9 +487,31 @@ function downloadChartData(chartId, date) {
                     break;
             }
             
+            // Ajouter les données en fonction du format
+            const labels = data.labels;
+            let values;
+            
+            if (chartId === 'workingHours' && data.datasets) {
+                // Nouveau format pour les heures de travail
+                values = data.datasets[0].data;
+                
+                // Ajouter les informations sur les heures de travail configurées si disponibles
+                if (data.meta && data.meta.workDayStart && data.meta.workDayEnd) {
+                    csvContent = 'data:text/csv;charset=utf-8,';
+                    csvContent += `Heures de travail configurées,${data.meta.workDayStart} - ${data.meta.workDayEnd}\n\n`;
+                    csvContent += 'Catégorie d\'heures de travail,Nombre d\'employés\n';
+                }
+            } else if (data.data) {
+                // Ancien format
+                values = data.data;
+            } else {
+                console.error('Format de données non reconnu:', data);
+                return;
+            }
+            
             // Ajouter les données
-            for (let i = 0; i < data.labels.length; i++) {
-                csvContent += `"${data.labels[i]}",${data.data[i]}\n`;
+            for (let i = 0; i < labels.length; i++) {
+                csvContent += `"${labels[i]}",${values[i]}\n`;
             }
             
             // Créer le lien de téléchargement

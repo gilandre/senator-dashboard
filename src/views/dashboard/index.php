@@ -247,26 +247,29 @@ ob_start();
         <!-- Working Hours Distribution Chart -->
         <div class="col-xl-6 col-lg-6 mb-4">
             <div class="dashboard-card chart-card" id="workingHoursChartCard">
-                <div class="card-header">
-                    <h6 class="mb-0 fw-bold">Répartition des heures de travail</h6>
-                    <div class="card-actions">
-                        <button class="btn btn-sm btn-icon download-btn" data-chart-id="workingHours" data-bs-toggle="tooltip" title="Télécharger les données">
-                            <i class="fas fa-download"></i>
-                        </button>
-                        <button class="btn btn-sm btn-icon info-btn" data-chart-id="workingHours" data-bs-toggle="tooltip" title="Plus d'informations">
-                            <i class="fas fa-info-circle"></i>
-                        </button>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <div class="chart-area position-relative">
-                        <div class="d-flex justify-content-center align-items-center h-100 loading-spinner chart-spinner">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Chargement...</span>
-                            </div>
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5>Répartition des heures de travail</h5>
+                        <div class="chart-actions">
+                            <button type="button" class="btn btn-sm btn-outline-info info-btn" data-chart-id="workingHours">
+                                <i class="fas fa-info-circle"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-primary download-btn" data-chart-id="workingHours">
+                                <i class="fas fa-download"></i>
+                            </button>
                         </div>
-                        <canvas id="workingHoursChart"></canvas>
                     </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <div class="loading-spinner chart-spinner">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Chargement...</span>
+                                </div>
+                            </div>
+                            <canvas id="workingHoursChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="card-footer" style="display: none;"></div>
                 </div>
             </div>
         </div>
