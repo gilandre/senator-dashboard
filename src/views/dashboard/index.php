@@ -193,10 +193,10 @@ ob_start();
                 <div class="card-header">
                     <h6 class="mb-0 fw-bold">Distribution des arrivées</h6>
                     <div class="card-actions">
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Télécharger les données">
+                        <button class="btn btn-sm btn-icon download-btn" data-chart-id="arrival" data-bs-toggle="tooltip" title="Télécharger les données">
                             <i class="fas fa-download"></i>
                         </button>
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Plus d'informations">
+                        <button class="btn btn-sm btn-icon info-btn" data-chart-id="arrival" data-bs-toggle="tooltip" title="Plus d'informations">
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </div>
@@ -220,10 +220,10 @@ ob_start();
                 <div class="card-header">
                     <h6 class="mb-0 fw-bold">Distribution des départs</h6>
                     <div class="card-actions">
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Télécharger les données">
+                        <button class="btn btn-sm btn-icon download-btn" data-chart-id="departure" data-bs-toggle="tooltip" title="Télécharger les données">
                             <i class="fas fa-download"></i>
                         </button>
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Plus d'informations">
+                        <button class="btn btn-sm btn-icon info-btn" data-chart-id="departure" data-bs-toggle="tooltip" title="Plus d'informations">
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </div>
@@ -250,10 +250,10 @@ ob_start();
                 <div class="card-header">
                     <h6 class="mb-0 fw-bold">Répartition des heures de travail</h6>
                     <div class="card-actions">
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Télécharger les données">
+                        <button class="btn btn-sm btn-icon download-btn" data-chart-id="workingHours" data-bs-toggle="tooltip" title="Télécharger les données">
                             <i class="fas fa-download"></i>
                         </button>
-                        <button class="btn btn-sm btn-icon" data-bs-toggle="tooltip" title="Plus d'informations">
+                        <button class="btn btn-sm btn-icon info-btn" data-chart-id="workingHours" data-bs-toggle="tooltip" title="Plus d'informations">
                             <i class="fas fa-info-circle"></i>
                         </button>
                     </div>
@@ -295,6 +295,10 @@ ob_start();
                         <div class="tip-box mt-3">
                             <i class="fas fa-lightbulb text-warning me-2"></i>
                             <span>Utilisez le sélecteur de date en haut pour visualiser les données d'un jour spécifique.</span>
+                        </div>
+                        <div class="tip-box mt-3 bg-light">
+                            <i class="fas fa-download text-primary me-2"></i>
+                            <span>Vous pouvez télécharger les données des graphiques au format CSV ou consulter plus d'informations en cliquant sur les icônes correspondantes.</span>
                         </div>
                     </div>
                 </div>
@@ -700,6 +704,26 @@ ob_start();
         document.getElementById('lastUpdateTime').textContent = new Date().toLocaleTimeString();
     });
 </script>
+
+<!-- Modal pour plus d'informations -->
+<div class="modal fade" id="chartInfoModal" tabindex="-1" aria-labelledby="chartInfoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="chartInfoModalLabel">Informations sur le graphique</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body">
+                <div id="chart-info-content">
+                    <!-- Le contenu sera chargé dynamiquement -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <?php
 // Fin du contenu de la page
