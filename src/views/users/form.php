@@ -1,4 +1,11 @@
-<?php require_once __DIR__ . '/../layouts/header.php'; ?>
+<?php
+$pageTitle = isset($user) ? 'Modifier l\'Utilisateur' : 'Nouvel Utilisateur';
+$currentPage = 'users';
+
+// Début du contenu de la page
+ob_start();
+
+require_once __DIR__ . '/../layouts/header.php'; ?>
 
 <div class="container-fluid px-4">
     <h1 class="mt-4"><?php echo isset($user) ? 'Edit User' : 'Create User'; ?></h1>

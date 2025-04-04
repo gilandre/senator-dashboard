@@ -421,6 +421,10 @@ class DashboardService
             
             // Compter les arrivées par tranche horaire
             foreach ($arrivals as $arrival) {
+                if (!isset($arrival['first_entry']) || empty($arrival['first_entry'])) {
+                    continue;
+                }
+                
                 $arrivalTime = strtotime($arrival['first_entry']);
                 $hour = intval(date('H', $arrivalTime));
                 
@@ -479,6 +483,10 @@ class DashboardService
             
             // Compter les départs par tranche horaire
             foreach ($departures as $departure) {
+                if (!isset($departure['last_entry']) || empty($departure['last_entry'])) {
+                    continue;
+                }
+                
                 $departureTime = strtotime($departure['last_entry']);
                 $hour = intval(date('H', $departureTime));
                 
@@ -627,5 +635,183 @@ class DashboardService
         }
         
         return round(($earlyCount / count($departureTimes)) * 100);
+    }
+
+    /**
+     * Récupère les statistiques d'assiduité pour une date donnée
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Statistiques d'assiduité
+     */
+    public function getAttendanceStats(string $date): array
+    {
+        try {
+            // Requête pour compter les personnes présentes (entrée enregistrée)
+            $queryTotal = "
+                SELECT COUNT(DISTINCT badge_number) as total
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+            ";
+            
+            $stmtTotal = $this->db->prepare($queryTotal);
+            $stmtTotal->execute(['date' => $date]);
+            $result = $stmtTotal->fetch(PDO::FETCH_ASSOC);
+            $total = isset($result['total']) ? intval($result['total']) : 0;
+            
+            // Requête pour les entrées avant 9h
+            $queryOnTime = "
+                SELECT COUNT(DISTINCT badge_number) as on_time
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                AND event_time < '09:00:00'
+            ";
+            
+            $stmtOnTime = $this->db->prepare($queryOnTime);
+            $stmtOnTime->execute(['date' => $date]);
+            $resultOnTime = $stmtOnTime->fetch(PDO::FETCH_ASSOC);
+            $onTime = isset($resultOnTime['on_time']) ? intval($resultOnTime['on_time']) : 0;
+            
+            // Requête pour les entrées après 9h (en retard)
+            $queryLate = "
+                SELECT COUNT(DISTINCT badge_number) as late
+                FROM (
+                    SELECT 
+                        badge_number,
+                        MIN(event_time) as first_entry
+                    FROM access_logs
+                    WHERE event_date = :date
+                    AND event_type = 'Utilisateur accepté'
+                    GROUP BY badge_number
+                ) as first_entries
+                WHERE first_entry >= '09:00:00'
+            ";
+            
+            $stmtLate = $this->db->prepare($queryLate);
+            $stmtLate->execute(['date' => $date]);
+            $resultLate = $stmtLate->fetch(PDO::FETCH_ASSOC);
+            $late = isset($resultLate['late']) ? intval($resultLate['late']) : 0;
+            
+            // Calcul du temps moyen de présence
+            $queryAvgTime = "
+                SELECT 
+                    badge_number,
+                    MIN(event_time) as first_entry,
+                    MAX(event_time) as last_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmtAvgTime = $this->db->prepare($queryAvgTime);
+            $stmtAvgTime->execute(['date' => $date]);
+            $entries = $stmtAvgTime->fetchAll(PDO::FETCH_ASSOC);
+            
+            $totalMinutes = 0;
+            $validEntries = 0;
+            
+            foreach ($entries as $entry) {
+                if (isset($entry['first_entry']) && isset($entry['last_entry']) 
+                    && $entry['first_entry'] != $entry['last_entry']) {
+                    $start = strtotime($entry['first_entry']);
+                    $end = strtotime($entry['last_entry']);
+                    
+                    if ($end > $start) {
+                        $totalMinutes += ($end - $start) / 60;
+                        $validEntries++;
+                    }
+                }
+            }
+            
+            $avgWorkingHours = ($validEntries > 0) ? round($totalMinutes / $validEntries / 60, 1) : 0;
+            
+            return [
+                'total' => $total,
+                'onTime' => $onTime,
+                'late' => $late,
+                'avgWorkingHours' => $avgWorkingHours
+            ];
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la récupération des statistiques d'assiduité: " . $e->getMessage());
+            return [
+                'total' => 0,
+                'onTime' => 0,
+                'late' => 0,
+                'avgWorkingHours' => 0
+            ];
+        }
+    }
+
+    /**
+     * Récupère les données sur le temps de travail
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Répartition des heures de travail
+     */
+    public function getWorkingHoursData(string $date): array
+    {
+        try {
+            // Requête pour obtenir le temps de travail par employé
+            $query = "
+                SELECT 
+                    badge_number,
+                    MIN(event_time) as first_entry,
+                    MAX(event_time) as last_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute(['date' => $date]);
+            $entries = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Initialiser les catégories d'heures de travail
+            $categories = [
+                '< 4h' => 0,
+                '4-6h' => 0,
+                '6-8h' => 0,
+                '8-9h' => 0,
+                '> 9h' => 0
+            ];
+            
+            foreach ($entries as $entry) {
+                if (isset($entry['first_entry']) && isset($entry['last_entry']) 
+                    && $entry['first_entry'] != $entry['last_entry']) {
+                    $start = strtotime($entry['first_entry']);
+                    $end = strtotime($entry['last_entry']);
+                    
+                    if ($end > $start) {
+                        $hoursWorked = ($end - $start) / 3600;
+                        
+                        if ($hoursWorked < 4) {
+                            $categories['< 4h']++;
+                        } elseif ($hoursWorked < 6) {
+                            $categories['4-6h']++;
+                        } elseif ($hoursWorked < 8) {
+                            $categories['6-8h']++;
+                        } elseif ($hoursWorked < 9) {
+                            $categories['8-9h']++;
+                        } else {
+                            $categories['> 9h']++;
+                        }
+                    }
+                }
+            }
+            
+            return [
+                'labels' => array_keys($categories),
+                'data' => array_values($categories)
+            ];
+        } catch (PDOException $e) {
+            error_log("Erreur lors du calcul de la répartition des heures de travail: " . $e->getMessage());
+            return [
+                'labels' => [],
+                'data' => []
+            ];
+        }
     }
 } 

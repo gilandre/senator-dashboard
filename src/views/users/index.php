@@ -3,6 +3,12 @@ require_once __DIR__ . '/../layouts/header.php';
 use App\Core\Auth;
 
 $auth = new Auth();
+
+$pageTitle = 'Gestion des Utilisateurs';
+$currentPage = 'users';
+
+// Début du contenu de la page
+ob_start();
 ?>
 
 <div class="container-fluid px-4">

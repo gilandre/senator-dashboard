@@ -45,6 +45,7 @@ $router->post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // Dashboard routes
 $router->get('/dashboard', [DashboardController::class, 'index']);
+$router->get('/dashboard/data', [DashboardController::class, 'getData']);
 
 // User routes
 $router->get('/users', [UserController::class, 'index']);
