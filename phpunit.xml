@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="Unit">
+            <directory suffix="Test.php">./tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Functional">
+            <directory suffix="Test.php">./tests/Functional</directory>
+        </testsuite>
+    </testsuites>
+    <coverage processUncoveredFiles="true">
+        <include>
+            <directory suffix=".php">./src</directory>
+        </include>
+        <exclude>
+            <directory suffix=".php">./src/views</directory>
+            <directory suffix=".php">./src/config</directory>
+        </exclude>
+    </coverage>
+    <php>
+        <env name="APP_ENV" value="testing"/>
+        <env name="DB_HOST" value="localhost"/>
+        <env name="DB_NAME" value="senator_dashboard"/>
+        <env name="DB_USER" value="root"/>
+        <env name="DB_PASS" value=""/>
+        <env name="APP_URL" value="http://localhost:8000"/>
+        <env name="APP_SECRET" value="test_secret"/>
+    </php>
+</phpunit> 

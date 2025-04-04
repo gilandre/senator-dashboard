@@ -1,0 +1,42 @@
+# Fichiers d'environnement
+.env
+.env.backup
+
+# Dépendances
+/vendor/
+/node_modules/
+
+# Fichiers de logs
+*.log
+php_error.log
+
+# Fichiers de base de données SQLite
+/database/*.sqlite
+/database/*.sqlite-journal
+
+# Fichiers de cache
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+
+# Fichiers générés par l'IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Fichiers système
+.DS_Store
+Thumbs.db
+
+# Fichiers de cache composer
+composer.phar
+
+# Dossiers de stockage
+/storage/
+
+# Fichiers temporaires
+*.swp
+*.swo
+*.tmp
+*~ 
