@@ -245,4 +245,387 @@ class DashboardService
             }, range(0, 23));
         }
     }
+
+    /**
+     * Récupère les statistiques d'assiduité (taux de présence)
+     * 
+     * @param string $date La date au format Y-m-d
+     * @param int $totalExpected Nombre total d'employés attendus
+     * @return array Taux de présence et statistiques associées
+     */
+    public function getAttendanceRate(string $date, int $totalExpected = 10): array
+    {
+        try {
+            // Récupération du nombre d'employés présents ce jour
+            $query = "
+                SELECT 
+                    COUNT(DISTINCT badge_number) as present_employees
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute(['date' => $date]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Calcul du taux de présence
+            $presentEmployees = $result['present_employees'] ?? 0;
+            $attendanceRate = ($totalExpected > 0) ? round(($presentEmployees / $totalExpected) * 100) : 0;
+            
+            return [
+                'present_employees' => $presentEmployees,
+                'total_expected' => $totalExpected,
+                'attendance_rate' => $attendanceRate
+            ];
+        } catch (PDOException $e) {
+            error_log("Erreur lors du calcul du taux de présence: " . $e->getMessage());
+            return [
+                'present_employees' => 0,
+                'total_expected' => $totalExpected,
+                'attendance_rate' => 0
+            ];
+        }
+    }
+
+    /**
+     * Récupère les statistiques d'heures d'arrivée et de départ
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Moyennes des heures d'arrivée et de départ
+     */
+    public function getWorkingHoursStats(string $date): array
+    {
+        try {
+            // Récupération des premières entrées de la journée (arrivées)
+            $arrivalQuery = "
+                SELECT 
+                    badge_number,
+                    MIN(event_time) as first_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmt = $this->db->prepare($arrivalQuery);
+            $stmt->execute(['date' => $date]);
+            $arrivals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Récupération des dernières entrées de la journée (départs)
+            $departureQuery = "
+                SELECT 
+                    badge_number,
+                    MAX(event_time) as last_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmt = $this->db->prepare($departureQuery);
+            $stmt->execute(['date' => $date]);
+            $departures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Calcul des statistiques
+            $arrivalTimes = [];
+            $departureTimes = [];
+            $workDurations = [];
+            
+            foreach ($arrivals as $arrival) {
+                $arrivalTime = strtotime($arrival['first_entry']);
+                $arrivalTimes[] = $arrivalTime;
+                
+                // Chercher le départ correspondant
+                foreach ($departures as $departure) {
+                    if ($departure['badge_number'] === $arrival['badge_number']) {
+                        $departureTime = strtotime($departure['last_entry']);
+                        $departureTimes[] = $departureTime;
+                        
+                        // Calculer la durée de présence
+                        $duration = $departureTime - $arrivalTime;
+                        if ($duration > 0) {
+                            $workDurations[] = $duration;
+                        }
+                        break;
+                    }
+                }
+            }
+            
+            // Calculer les moyennes
+            $avgArrivalTime = !empty($arrivalTimes) ? $this->calculateAverageTime($arrivalTimes) : '00:00';
+            $avgDepartureTime = !empty($departureTimes) ? $this->calculateAverageTime($departureTimes) : '00:00';
+            $avgWorkDuration = !empty($workDurations) ? $this->formatDuration(array_sum($workDurations) / count($workDurations)) : '00:00';
+            
+            // Calculer le taux de ponctualité (% d'arrivées avant 9:00)
+            $onTimeCount = 0;
+            foreach ($arrivalTimes as $time) {
+                $hour = intval(date('H', $time));
+                $minute = intval(date('i', $time));
+                if ($hour < 9 || ($hour == 9 && $minute <= 0)) {
+                    $onTimeCount++;
+                }
+            }
+            
+            $punctualityRate = !empty($arrivalTimes) ? round(($onTimeCount / count($arrivalTimes)) * 100) : 0;
+            
+            return [
+                'avg_arrival_time' => $avgArrivalTime,
+                'avg_departure_time' => $avgDepartureTime,
+                'avg_work_duration' => $avgWorkDuration,
+                'punctuality_rate' => $punctualityRate,
+                'early_departures_rate' => $this->calculateEarlyDeparturesRate($departureTimes)
+            ];
+        } catch (PDOException $e) {
+            error_log("Erreur lors du calcul des statistiques d'heures de travail: " . $e->getMessage());
+            return [
+                'avg_arrival_time' => '00:00',
+                'avg_departure_time' => '00:00',
+                'avg_work_duration' => '00:00',
+                'punctuality_rate' => 0,
+                'early_departures_rate' => 0
+            ];
+        }
+    }
+
+    /**
+     * Récupère la distribution des heures d'arrivée
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Distribution des arrivées par tranche horaire
+     */
+    public function getArrivalDistribution(string $date): array
+    {
+        try {
+            // Récupération des premières entrées de la journée (arrivées)
+            $query = "
+                SELECT 
+                    badge_number,
+                    MIN(event_time) as first_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute(['date' => $date]);
+            $arrivals = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Initialiser les tranches horaires (de 6h à 12h)
+            $timeSlots = [];
+            for ($h = 6; $h <= 12; $h++) {
+                $timeSlot = sprintf('%02d:00-%02d:59', $h, $h);
+                $timeSlots[$timeSlot] = 0;
+            }
+            
+            // Compter les arrivées par tranche horaire
+            foreach ($arrivals as $arrival) {
+                $arrivalTime = strtotime($arrival['first_entry']);
+                $hour = intval(date('H', $arrivalTime));
+                
+                if ($hour >= 6 && $hour <= 12) {
+                    $timeSlot = sprintf('%02d:00-%02d:59', $hour, $hour);
+                    $timeSlots[$timeSlot]++;
+                }
+            }
+            
+            // Convertir en format pour le graphique
+            $result = [
+                'labels' => array_keys($timeSlots),
+                'data' => array_values($timeSlots)
+            ];
+            
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Erreur lors du calcul de la distribution des arrivées: " . $e->getMessage());
+            return [
+                'labels' => [],
+                'data' => []
+            ];
+        }
+    }
+
+    /**
+     * Récupère la distribution des heures de départ
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Distribution des départs par tranche horaire
+     */
+    public function getDepartureDistribution(string $date): array
+    {
+        try {
+            // Récupération des dernières entrées de la journée (départs)
+            $query = "
+                SELECT 
+                    badge_number,
+                    MAX(event_time) as last_entry
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute(['date' => $date]);
+            $departures = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Initialiser les tranches horaires (de 15h à 20h)
+            $timeSlots = [];
+            for ($h = 15; $h <= 20; $h++) {
+                $timeSlot = sprintf('%02d:00-%02d:59', $h, $h);
+                $timeSlots[$timeSlot] = 0;
+            }
+            
+            // Compter les départs par tranche horaire
+            foreach ($departures as $departure) {
+                $departureTime = strtotime($departure['last_entry']);
+                $hour = intval(date('H', $departureTime));
+                
+                if ($hour >= 15 && $hour <= 20) {
+                    $timeSlot = sprintf('%02d:00-%02d:59', $hour, $hour);
+                    $timeSlots[$timeSlot]++;
+                }
+            }
+            
+            // Convertir en format pour le graphique
+            $result = [
+                'labels' => array_keys($timeSlots),
+                'data' => array_values($timeSlots)
+            ];
+            
+            return $result;
+        } catch (PDOException $e) {
+            error_log("Erreur lors du calcul de la distribution des départs: " . $e->getMessage());
+            return [
+                'labels' => [],
+                'data' => []
+            ];
+        }
+    }
+
+    /**
+     * Récupère les données des employés pour un tableau individuel
+     * 
+     * @param string $date La date au format Y-m-d
+     * @return array Données de présence par employé
+     */
+    public function getEmployeeAttendanceData(string $date): array
+    {
+        try {
+            // Récupérer toutes les entrées/sorties de la journée
+            $query = "
+                SELECT 
+                    badge_number,
+                    MIN(event_time) as first_entry,
+                    MAX(event_time) as last_entry,
+                    COUNT(*) as entry_count
+                FROM access_logs
+                WHERE event_date = :date
+                AND event_type = 'Utilisateur accepté'
+                GROUP BY badge_number
+                ORDER BY first_entry
+            ";
+            
+            $stmt = $this->db->prepare($query);
+            $stmt->execute(['date' => $date]);
+            $employees = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Ajouter les calculs spécifiques pour chaque employé
+            foreach ($employees as &$employee) {
+                $firstEntry = strtotime($employee['first_entry']);
+                $lastEntry = strtotime($employee['last_entry']);
+                
+                // Calculer la durée de présence
+                $duration = $lastEntry - $firstEntry;
+                $employee['duration'] = $this->formatDuration($duration);
+                
+                // Vérifier si l'arrivée est à l'heure (avant 9h)
+                $arrivalHour = intval(date('H', $firstEntry));
+                $arrivalMinute = intval(date('i', $firstEntry));
+                $employee['is_late'] = ($arrivalHour > 9 || ($arrivalHour == 9 && $arrivalMinute > 0));
+                
+                // Vérifier si le départ est anticipé (avant 17h)
+                $departureHour = intval(date('H', $lastEntry));
+                $departureMinute = intval(date('i', $lastEntry));
+                $employee['is_early_departure'] = ($departureHour < 17);
+                
+                // Formater les heures pour l'affichage
+                $employee['arrival_time'] = date('H:i', $firstEntry);
+                $employee['departure_time'] = date('H:i', $lastEntry);
+            }
+            
+            return $employees;
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la récupération des données d'assiduité par employé: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Calcule la moyenne d'une série d'heures
+     * 
+     * @param array $times Tableau de timestamps
+     * @return string Heure moyenne au format HH:MM
+     */
+    private function calculateAverageTime(array $times): string
+    {
+        if (empty($times)) {
+            return '00:00';
+        }
+        
+        // Convertir les timestamps en minutes depuis minuit
+        $minutesArray = [];
+        foreach ($times as $time) {
+            $hour = intval(date('H', $time));
+            $minute = intval(date('i', $time));
+            $minutesArray[] = $hour * 60 + $minute;
+        }
+        
+        // Calculer la moyenne
+        $avgMinutes = array_sum($minutesArray) / count($minutesArray);
+        
+        // Convertir en heures:minutes
+        $hours = floor($avgMinutes / 60);
+        $minutes = $avgMinutes % 60;
+        
+        return sprintf('%02d:%02d', $hours, round($minutes));
+    }
+
+    /**
+     * Formate une durée en secondes au format HH:MM
+     * 
+     * @param int $seconds Durée en secondes
+     * @return string Durée formatée au format HH:MM
+     */
+    private function formatDuration(int $seconds): string
+    {
+        $hours = floor($seconds / 3600);
+        $minutes = floor(($seconds % 3600) / 60);
+        
+        return sprintf('%02d:%02d', $hours, $minutes);
+    }
+
+    /**
+     * Calcule le taux de départs anticipés (avant 17h)
+     * 
+     * @param array $departureTimes Tableau de timestamps de départ
+     * @return int Pourcentage de départs anticipés
+     */
+    private function calculateEarlyDeparturesRate(array $departureTimes): int
+    {
+        if (empty($departureTimes)) {
+            return 0;
+        }
+        
+        $earlyCount = 0;
+        foreach ($departureTimes as $time) {
+            $hour = intval(date('H', $time));
+            if ($hour < 17) {
+                $earlyCount++;
+            }
+        }
+        
+        return round(($earlyCount / count($departureTimes)) * 100);
+    }
 } 

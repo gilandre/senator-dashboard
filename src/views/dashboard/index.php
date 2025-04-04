@@ -1,22 +1,28 @@
 <?php
-$pageTitle = 'Tableau de bord';
+$pageTitle = 'Tableau de bord RH - Assiduité';
 $currentPage = 'dashboard';
 $hideGlobalTopbar = false; // Activer la topbar globale standard
 
 // Vérification des données pour éviter les erreurs
 $dailyStats = $dailyStats ?? [];
-$dailyStats['total_people'] = $dailyStats['total_people'] ?? 0;
-$dailyStats['total_entries'] = $dailyStats['total_entries'] ?? 0;
-$dailyStats['validated_entries'] = $dailyStats['validated_entries'] ?? 0;
-$dailyStats['unique_entries'] = $dailyStats['unique_entries'] ?? 0;
-$dailyStats['failed_entries'] = $dailyStats['failed_entries'] ?? 0;
-$dailyStats['failed_attempts'] = $dailyStats['failed_attempts'] ?? 0;
+$attendanceStats = $attendanceStats ?? [
+    'present_employees' => 0,
+    'total_expected' => 10,
+    'attendance_rate' => 0
+];
+$workingHoursStats = $workingHoursStats ?? [
+    'avg_arrival_time' => '00:00',
+    'avg_departure_time' => '00:00',
+    'avg_work_duration' => '00:00',
+    'punctuality_rate' => 0,
+    'early_departures_rate' => 0
+];
+$employeeData = $employeeData ?? [];
 
 $chartData = $chartData ?? [
     'weekly' => ['labels' => [], 'people' => [], 'entries' => []],
-    'peakHours' => ['labels' => [], 'entries' => []],
-    'locations' => ['labels' => [], 'entries' => []],
-    'groups' => ['labels' => [], 'users' => [], 'actions' => []]
+    'arrivalDistribution' => ['labels' => [], 'data' => []],
+    'departureDistribution' => ['labels' => [], 'data' => []]
 ];
 
 // Scripts pour la page
@@ -29,7 +35,7 @@ ob_start();
 ?>
 
 <div class="container-fluid">
-    <!-- Header avec sélecteur de date uniquement -->
+    <!-- Header avec sélecteur de date -->
     <div class="page-header mb-4">
         <div class="d-flex align-items-center flex-wrap">
             <div class="date-filter shadow-sm rounded ms-0 p-2 bg-white">
@@ -43,15 +49,16 @@ ob_start();
         </div>
     </div>
 
-    <!-- KPIs -->
+    <!-- KPIs d'assiduité -->
     <div class="row mb-4">
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm bg-primary text-white">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-uppercase mb-1 opacity-75">Total Personnes</h6>
-                            <h2 class="mb-0 fw-bold"><?php echo isset($dailyStats['total_people']) ? number_format($dailyStats['total_people']) : '0'; ?></h2>
+                            <h6 class="text-uppercase mb-1 opacity-75">Taux de Présence</h6>
+                            <h2 class="mb-0 fw-bold"><?php echo $attendanceStats['attendance_rate']; ?>%</h2>
+                            <p class="mb-0 small"><?php echo $attendanceStats['present_employees']; ?> sur <?php echo $attendanceStats['total_expected']; ?> employés</p>
                         </div>
                         <div class="icon-circle bg-white bg-opacity-25 rounded-circle p-3">
                             <i class="fas fa-users fa-2x text-white"></i>
@@ -60,46 +67,33 @@ ob_start();
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm bg-success text-white">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-uppercase mb-1 opacity-75">Entrées Validées</h6>
-                            <h2 class="mb-0 fw-bold"><?php echo isset($dailyStats['validated_entries']) ? number_format($dailyStats['validated_entries']) : '0'; ?></h2>
+                            <h6 class="text-uppercase mb-1 opacity-75">Taux de Ponctualité</h6>
+                            <h2 class="mb-0 fw-bold"><?php echo $workingHoursStats['punctuality_rate']; ?>%</h2>
+                            <p class="mb-0 small">Arrivées avant 9h00</p>
                         </div>
                         <div class="icon-circle bg-white bg-opacity-25 rounded-circle p-3">
-                            <i class="fas fa-check-circle fa-2x text-white"></i>
+                            <i class="fas fa-clock fa-2x text-white"></i>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card shadow-sm bg-info text-white">
                 <div class="card-body py-3">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <h6 class="text-uppercase mb-1 opacity-75">Entrées Uniques</h6>
-                            <h2 class="mb-0 fw-bold"><?php echo isset($dailyStats['unique_entries']) ? number_format($dailyStats['unique_entries']) : '0'; ?></h2>
+                            <h6 class="text-uppercase mb-1 opacity-75">Durée moyenne de présence</h6>
+                            <h2 class="mb-0 fw-bold"><?php echo $workingHoursStats['avg_work_duration']; ?></h2>
+                            <p class="mb-0 small">Heures de travail</p>
                         </div>
                         <div class="icon-circle bg-white bg-opacity-25 rounded-circle p-3">
-                            <i class="fas fa-fingerprint fa-2x text-white"></i>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card shadow-sm bg-warning text-white">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-uppercase mb-1 opacity-75">Tentatives Échouées</h6>
-                            <h2 class="mb-0 fw-bold"><?php echo isset($dailyStats['failed_attempts']) ? number_format($dailyStats['failed_attempts']) : '0'; ?></h2>
-                        </div>
-                        <div class="icon-circle bg-white bg-opacity-25 rounded-circle p-3">
-                            <i class="fas fa-exclamation-triangle fa-2x text-white"></i>
+                            <i class="fas fa-hourglass-half fa-2x text-white"></i>
                         </div>
                     </div>
                 </div>
@@ -107,45 +101,158 @@ ob_start();
         </div>
     </div>
 
-    <!-- Charts -->
+    <!-- Statistiques horaires -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0 fw-bold">Horaires Moyens</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="p-3 rounded bg-light mb-2">
+                                <h2 class="display-6 fw-bold text-primary"><?php echo $workingHoursStats['avg_arrival_time']; ?></h2>
+                                <p class="mb-0">Heure moyenne d'arrivée</p>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-3 rounded bg-light mb-2">
+                                <h2 class="display-6 fw-bold text-danger"><?php echo $workingHoursStats['avg_departure_time']; ?></h2>
+                                <p class="mb-0">Heure moyenne de départ</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-6 text-center">
+                            <div class="d-inline-flex align-items-center">
+                                <div class="me-2 small text-muted">Taux de ponctualité</div>
+                                <div class="progress flex-grow-1" style="height: 6px;">
+                                    <div class="progress-bar bg-primary" role="progressbar" style="width: <?php echo $workingHoursStats['punctuality_rate']; ?>%" aria-valuenow="<?php echo $workingHoursStats['punctuality_rate']; ?>" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <div class="ms-2 small"><?php echo $workingHoursStats['punctuality_rate']; ?>%</div>
+                            </div>
+                        </div>
+                        <div class="col-6 text-center">
+                            <div class="d-inline-flex align-items-center">
+                                <div class="me-2 small text-muted">Départs anticipés</div>
+                                <div class="progress flex-grow-1" style="height: 6px;">
+                                    <div class="progress-bar bg-danger" role="progressbar" style="width: <?php echo $workingHoursStats['early_departures_rate']; ?>%" aria-valuenow="<?php echo $workingHoursStats['early_departures_rate']; ?>" aria-valuemin="0" aria-valuemax="100"></div>
+                                </div>
+                                <div class="ms-2 small"><?php echo $workingHoursStats['early_departures_rate']; ?>%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0 fw-bold">Tendance de Présence Hebdomadaire</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="weeklyTrendsChart" height="220"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Distribution des horaires -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h5 class="card-title mb-0 fw-bold">Distribution des Heures d'Arrivée</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="arrivalDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white py-3">
+                    <h5 class="card-title mb-0 fw-bold">Distribution des Heures de Départ</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="departureDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tableau des employés -->
     <div class="row">
-        <div class="col-md-6 mb-4">
+        <div class="col-12">
             <div class="card shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="card-title mb-0 fw-bold">Tendances Hebdomadaires</h5>
+                <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0 fw-bold">Données Individuelles de Présence</h5>
+                    <div>
+                        <input type="text" id="employeeSearch" class="form-control form-control-sm" placeholder="Rechercher un employé...">
+                    </div>
                 </div>
-                <div class="card-body">
-                    <canvas id="weeklyTrendsChart"></canvas>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="card-title mb-0 fw-bold">Heures de Pointe</h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="peakHoursChart"></canvas>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="card-title mb-0 fw-bold">Top Localisations</h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="topLocationsChart"></canvas>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6 mb-4">
-            <div class="card shadow-sm">
-                <div class="card-header bg-white py-3">
-                    <h5 class="card-title mb-0 fw-bold">Statistiques par Action</h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="actionStatsChart"></canvas>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th>Badge</th>
+                                    <th>Arrivée</th>
+                                    <th>Départ</th>
+                                    <th>Durée</th>
+                                    <th>Entrées</th>
+                                    <th>Statut</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($employeeData)): ?>
+                                <tr>
+                                    <td colspan="6" class="text-center py-3">Aucune donnée disponible pour cette date</td>
+                                </tr>
+                                <?php else: ?>
+                                <?php foreach ($employeeData as $employee): ?>
+                                <tr>
+                                    <td><?php echo htmlspecialchars($employee['badge_number']); ?></td>
+                                    <td>
+                                        <span class="d-flex align-items-center">
+                                            <?php if ($employee['is_late']): ?>
+                                            <span class="badge bg-danger rounded-circle me-1" style="width:8px;height:8px;" title="En retard"></span>
+                                            <?php else: ?>
+                                            <span class="badge bg-success rounded-circle me-1" style="width:8px;height:8px;" title="À l'heure"></span>
+                                            <?php endif; ?>
+                                            <?php echo htmlspecialchars($employee['arrival_time']); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="d-flex align-items-center">
+                                            <?php if ($employee['is_early_departure']): ?>
+                                            <span class="badge bg-warning rounded-circle me-1" style="width:8px;height:8px;" title="Départ anticipé"></span>
+                                            <?php else: ?>
+                                            <span class="badge bg-success rounded-circle me-1" style="width:8px;height:8px;" title="Horaire complet"></span>
+                                            <?php endif; ?>
+                                            <?php echo htmlspecialchars($employee['departure_time']); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($employee['duration']); ?></td>
+                                    <td><?php echo htmlspecialchars($employee['entry_count']); ?></td>
+                                    <td>
+                                        <?php if ($employee['is_late'] && $employee['is_early_departure']): ?>
+                                        <span class="badge bg-danger">Irrégulier</span>
+                                        <?php elseif ($employee['is_late']): ?>
+                                        <span class="badge bg-warning">En retard</span>
+                                        <?php elseif ($employee['is_early_departure']): ?>
+                                        <span class="badge bg-warning">Départ anticipé</span>
+                                        <?php else: ?>
+                                        <span class="badge bg-success">Régulier</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -178,11 +285,18 @@ ob_start();
 .text-uppercase {
     letter-spacing: 0.05em;
 }
+.table th {
+    font-weight: 600;
+    font-size: 0.825rem;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
 </style>
 
 <script>
     // Configuration des graphiques
     document.addEventListener('DOMContentLoaded', function() {
+        // Graphique des tendances hebdomadaires
         const weeklyTrends = document.getElementById('weeklyTrendsChart');
         if (weeklyTrends) {
             new Chart(weeklyTrends, {
@@ -190,18 +304,10 @@ ob_start();
                 data: {
                     labels: <?php echo json_encode($chartData['weekly']['labels'] ?? []); ?>,
                     datasets: [{
-                        label: 'Personnes',
+                        label: 'Employés présents',
                         data: <?php echo json_encode($chartData['weekly']['people'] ?? []); ?>,
                         borderColor: 'rgb(75, 192, 192)',
                         backgroundColor: 'rgba(75, 192, 192, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2
-                    }, {
-                        label: 'Entrées',
-                        data: <?php echo json_encode($chartData['weekly']['entries'] ?? []); ?>,
-                        borderColor: 'rgb(255, 99, 132)',
-                        backgroundColor: 'rgba(255, 99, 132, 0.1)',
                         fill: true,
                         tension: 0.4,
                         borderWidth: 2
@@ -231,15 +337,16 @@ ob_start();
             });
         }
 
-        const peakHours = document.getElementById('peakHoursChart');
-        if (peakHours) {
-            new Chart(peakHours, {
+        // Graphique de distribution des arrivées
+        const arrivalDistribution = document.getElementById('arrivalDistributionChart');
+        if (arrivalDistribution) {
+            new Chart(arrivalDistribution, {
                 type: 'bar',
                 data: {
-                    labels: <?php echo json_encode($chartData['peakHours']['labels'] ?? []); ?>,
+                    labels: <?php echo json_encode($chartData['arrivalDistribution']['labels'] ?? []); ?>,
                     datasets: [{
-                        label: 'Nombre d\'entrées',
-                        data: <?php echo json_encode($chartData['peakHours']['entries'] ?? []); ?>,
+                        label: 'Nombre d\'arrivées',
+                        data: <?php echo json_encode($chartData['arrivalDistribution']['data'] ?? []); ?>,
                         backgroundColor: 'rgba(54, 162, 235, 0.7)',
                         borderColor: 'rgba(54, 162, 235, 1)',
                         borderWidth: 1,
@@ -265,15 +372,16 @@ ob_start();
             });
         }
 
-        const topLocations = document.getElementById('topLocationsChart');
-        if (topLocations) {
-            new Chart(topLocations, {
+        // Graphique de distribution des départs
+        const departureDistribution = document.getElementById('departureDistributionChart');
+        if (departureDistribution) {
+            new Chart(departureDistribution, {
                 type: 'bar',
                 data: {
-                    labels: <?php echo json_encode($chartData['locations']['labels'] ?? []); ?>,
+                    labels: <?php echo json_encode($chartData['departureDistribution']['labels'] ?? []); ?>,
                     datasets: [{
-                        label: 'Nombre d\'entrées',
-                        data: <?php echo json_encode($chartData['locations']['entries'] ?? []); ?>,
+                        label: 'Nombre de départs',
+                        data: <?php echo json_encode($chartData['departureDistribution']['data'] ?? []); ?>,
                         backgroundColor: 'rgba(255, 99, 132, 0.7)',
                         borderColor: 'rgba(255, 99, 132, 1)',
                         borderWidth: 1,
@@ -282,17 +390,16 @@ ob_start();
                 },
                 options: {
                     responsive: true,
-                    indexAxis: 'y',
                     scales: {
                         y: {
-                            grid: {
-                                display: false
-                            }
-                        },
-                        x: {
                             beginAtZero: true,
                             grid: {
                                 drawBorder: false
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
                             }
                         }
                     }
@@ -300,65 +407,35 @@ ob_start();
             });
         }
 
-        const actionStats = document.getElementById('actionStatsChart');
-        if (actionStats) {
-            new Chart(actionStats, {
-                type: 'bar',
-                data: {
-                    labels: <?php echo json_encode($chartData['groups']['labels'] ?? []); ?>,
-                    datasets: [{
-                        label: 'Utilisateurs',
-                        data: <?php echo json_encode($chartData['groups']['users'] ?? []); ?>,
-                        backgroundColor: 'rgba(75, 192, 192, 0.7)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1,
-                        borderRadius: 5
-                    }, {
-                        label: 'Actions',
-                        data: <?php echo json_encode($chartData['groups']['actions'] ?? []); ?>,
-                        backgroundColor: 'rgba(255, 159, 64, 0.7)',
-                        borderColor: 'rgba(255, 159, 64, 1)',
-                        borderWidth: 1,
-                        borderRadius: 5
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                drawBorder: false
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
-                            }
-                        }
-                    }
-                }
+        // Fonction de recherche pour le tableau des employés
+        const employeeSearch = document.getElementById('employeeSearch');
+        if (employeeSearch) {
+            employeeSearch.addEventListener('keyup', function() {
+                const searchValue = this.value.toLowerCase();
+                const rows = document.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(searchValue) ? '' : 'none';
+                });
             });
         }
     });
 
-    // Fonction de mise à jour du tableau de bord
+    // Fonction pour mettre à jour le tableau de bord
     function updateDashboard() {
-        const date = document.getElementById('dateSelector').value;
-        window.location.href = `/dashboard?date=${date}`;
-    }
-
-    // Utiliser la dernière date disponible par défaut
-    window.addEventListener('load', function() {
-        // Si l'URL n'a pas déjà un paramètre de date, on utilise la dernière date disponible
-        if (!window.location.search.includes('date=')) {
-            // La date la plus récente est déjà définie dans le contrôleur
-            // et passée à la vue comme valeur par défaut du sélecteur
+        const dateSelector = document.getElementById('dateSelector');
+        if (dateSelector && dateSelector.value) {
+            window.location.href = '/dashboard?date=' + dateSelector.value;
         }
-    });
+    }
 </script>
 
 <?php
+// Fin du contenu de la page
 $content = ob_get_clean();
+
+// Inclure le layout
 require_once __DIR__ . '/../layouts/app.php';
+?> 
 ?> 
