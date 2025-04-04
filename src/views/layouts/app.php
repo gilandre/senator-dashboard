@@ -39,29 +39,29 @@
             <ul class="nav flex-column">
                 <li class="nav-item">
                     <a class="nav-link <?php echo $currentPage === 'dashboard' ? 'active' : ''; ?>" href="/dashboard">
-                        <i class="fas fa-tachometer-alt"></i> Tableau de bord
+                        <i class="fas fa-tachometer-alt"></i> <span>Tableau de bord</span>
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $currentPage === 'import' ? 'active' : ''; ?>" href="/import">
-                        <i class="fas fa-file-import"></i> Import
+                        <i class="fas fa-file-import"></i> <span>Import</span>
                     </a>
                 </li>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $currentPage === 'reports' ? 'active' : ''; ?>" href="/reports">
-                        <i class="fas fa-chart-bar"></i> Rapports
+                        <i class="fas fa-chart-bar"></i> <span>Rapports</span>
                     </a>
                 </li>
                 <?php if (isset($auth) && $auth->isLoggedIn() && $auth->hasPermission('manage_users')): ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $currentPage === 'users' ? 'active' : ''; ?>" href="/users">
-                        <i class="fas fa-users"></i> Utilisateurs
+                        <i class="fas fa-users"></i> <span>Utilisateurs</span>
                     </a>
                 </li>
                 <?php endif; ?>
                 <li class="nav-item">
                     <a class="nav-link <?php echo $currentPage === 'settings' ? 'active' : ''; ?>" href="/settings">
-                        <i class="fas fa-cog"></i> Paramètres
+                        <i class="fas fa-cog"></i> <span>Paramètres</span>
                     </a>
                 </li>
             </ul>
@@ -73,7 +73,7 @@
             <nav class="navbar navbar-expand-lg navbar-light bg-light global-topbar" <?php if (isset($hideGlobalTopbar) && $hideGlobalTopbar === true) echo 'style="display: none;"'; ?>>
                 <div class="container-fluid">
                     <button type="button" id="sidebarCollapse" class="btn btn-link">
-                        <i class="fas fa-bars"></i>
+                        <i class="fas fa-chevron-left"></i>
                     </button>
                     
                     <!-- Titre de la page dans le top menu -->

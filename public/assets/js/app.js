@@ -5,10 +5,34 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
     const content = document.getElementById('content');
     
-    if (sidebarCollapse) {
+    // Vérifier s'il existe une préférence utilisateur sauvegardée
+    const sidebarState = localStorage.getItem('sidebarState');
+    
+    // Appliquer l'état sauvegardé au chargement de la page
+    if (sidebarState === 'collapsed' && sidebar && content) {
+        sidebar.classList.add('collapsed');
+        content.classList.add('expanded');
+    }
+    
+    if (sidebarCollapse && sidebar && content) {
         sidebarCollapse.addEventListener('click', function() {
+            // Pour les appareils mobiles
             sidebar.classList.toggle('active');
             content.classList.toggle('active');
+            
+            // Pour le mode collapsed
+            sidebar.classList.toggle('collapsed');
+            content.classList.toggle('expanded');
+            
+            // Sauvegarder la préférence de l'utilisateur
+            if (sidebar.classList.contains('collapsed')) {
+                localStorage.setItem('sidebarState', 'collapsed');
+            } else {
+                localStorage.setItem('sidebarState', 'expanded');
+            }
+            
+            // Ajouter une classe au bouton pour changer son apparence
+            sidebarCollapse.classList.toggle('active');
         });
     }
     
