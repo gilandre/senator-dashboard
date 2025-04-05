@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="h-100">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -26,9 +26,83 @@
         .global-topbar {
             display: <?php echo isset($hideGlobalTopbar) && $hideGlobalTopbar === true ? 'none' : 'block'; ?>;
         }
+        
+        /* Styles pour le sticky footer */
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            margin: 0;
+        }
+        
+        .wrapper {
+            display: flex;
+            flex: 1 0 auto;
+        }
+        
+        #content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100%;
+            padding-bottom: 20px;
+        }
+        
+        .footer {
+            flex-shrink: 0;
+            position: relative;
+            width: 100%;
+            background-color: #f8f9fa;
+            z-index: 10;
+        }
+        
+        @media (max-height: 768px) {
+            #content {
+                padding-bottom: 70px; /* Plus d'espace pour les petits écrans */
+            }
+        }
+        
+        .bg-light-primary {
+            background-color: rgba(13, 110, 253, 0.1);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-light-success {
+            background-color: rgba(25, 135, 84, 0.1);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-light-warning {
+            background-color: rgba(255, 193, 7, 0.1);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-light-danger {
+            background-color: rgba(220, 53, 69, 0.1);
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-gradient-success-to-primary {
+            background: linear-gradient(45deg, #198754, #0d6efd);
+        }
+        .stat-icon i {
+            font-size: 1.5rem;
+        }
     </style>
 </head>
-<body>
+<body class="d-flex flex-column h-100">
     <div class="wrapper">
         <!-- Sidebar -->
         <nav id="sidebar" class="sidebar">
@@ -118,7 +192,7 @@
             </nav>
 
             <!-- Main Content -->
-            <div class="container-fluid">
+            <div class="container-fluid flex-grow-1">
                 <?php if (isset($_SESSION['success'])): ?>
                     <div class="alert alert-success alert-dismissible fade show" role="alert">
                         <?php echo htmlspecialchars($_SESSION['success']); ?>
@@ -141,25 +215,29 @@
     </div>
 
     <!-- Footer -->
-    <footer class="footer mt-auto py-3 bg-light">
-        <div class="container-fluid">
-            <div class="row">
-                <div class="col-md-6">
-                    <span class="text-muted">© <?php echo date('Y'); ?> SENATOR. Tous droits réservés.</span>
+    <footer class="footer py-3 border-top mt-auto">
+        <div class="container-fluid px-4">
+            <div class="row align-items-center">
+                <div class="col-md-4 text-center text-md-start">
+                    <span class="text-muted small">© <?php echo date('Y'); ?> SENATOR</span>
                 </div>
-                <div class="col-md-6 text-end">
-                    <span class="text-muted">Version 1.0.0</span>
+                <div class="col-md-4 text-center">
+                    <img src="/assets/images/logo-small.svg" alt="SENATOR" height="24" class="d-inline-block me-2">
+                    <span class="text-muted small">Tous droits réservés</span>
+                </div>
+                <div class="col-md-4 text-center text-md-end">
+                    <span class="badge bg-secondary">Version 1.0.0</span>
                 </div>
             </div>
         </div>
     </footer>
 
     <!-- Scripts -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
     <?php if (file_exists($_SERVER['DOCUMENT_ROOT'] . '/assets/js/app.js')): ?>
     <script src="/assets/js/app.js"></script>
     <?php endif; ?>

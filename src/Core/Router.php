@@ -164,6 +164,9 @@ class Router
         $this->delete("/users/{id}", ["UserController", "delete"]);
         $this->get("/settings", ["SettingsController", "index"]);
         $this->post("/settings/update", ["SettingsController", "update"]);
+        $this->get("/profile", ["ProfileController", "index"]);
+        $this->post("/profile/update", ["ProfileController", "update"]);
+        $this->post("/profile/changePassword", ["ProfileController", "changePassword"]);
     }
 
     public function getParams()

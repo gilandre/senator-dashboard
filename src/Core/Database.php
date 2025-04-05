@@ -16,7 +16,7 @@ class Database
         try {
             // Si config est null, utiliser SQLite par défaut
             if ($config === null) {
-                $dsn = "sqlite:" . __DIR__ . "/../../database/database.sqlite";
+                $dsn = "sqlite:" . __DIR__ . "/../../database.sqlite";
                 $options = [
                     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
@@ -119,5 +119,13 @@ class Database
     public function rollBack()
     {
         return $this->connection->rollBack();
+    }
+
+    /**
+     * Vérifie si une transaction est en cours
+     */
+    public function inTransaction()
+    {
+        return $this->connection->inTransaction();
     }
 } 

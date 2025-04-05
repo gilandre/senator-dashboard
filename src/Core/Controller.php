@@ -128,4 +128,13 @@ abstract class Controller
         }
         return null;
     }
+
+    // Pour compatibilité avec le code existant
+    protected function setFlash(string $type, string $message): void
+    {
+        $_SESSION['flash'] = [
+            'type' => $type,
+            'message' => $message
+        ];
+    }
 } 
