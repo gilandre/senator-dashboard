@@ -22,6 +22,14 @@
     --sidebar-width: 250px;
     --topbar-height: 60px;
     --border-color: #e9ecef;
+    
+    /* Couleurs de gradient comme dans le dashboard */
+    --gradient-primary: linear-gradient(135deg, #3a4cb2 0%, #4c8dd6 100%);
+    --primary-rgb: 58, 76, 178;
+    --success-rgb: 25, 135, 84;
+    --warning-rgb: 255, 193, 7;
+    --danger-rgb: 220, 53, 69;
+    --info-rgb: 13, 202, 240;
 }
 
 /* Layout */
@@ -73,7 +81,7 @@ body {
 }
 
 .page-title-text {
-    background: linear-gradient(135deg, #3a4cb2 0%, #4c8dd6 100%);
+    background: var(--gradient-primary);
     color: white;
     padding: 8px 16px;
     border-radius: 6px;
@@ -175,7 +183,7 @@ body {
     display: flex;
     align-items: center;
     padding: 15px;
-    background: linear-gradient(135deg, #3a4cb2 0%, #4c8dd6 100%);
+    background: var(--gradient-primary);
     border-radius: 8px 8px 0 0;
     margin-top: -8px;
     margin-left: -1px;
@@ -249,6 +257,27 @@ body {
 
 .custom-dropdown-item:last-child {
     border-radius: 0 0 8px 8px;
+}
+
+/* Backgrounds pour icônes */
+.bg-light-primary {
+    background-color: rgba(var(--primary-rgb), 0.1);
+}
+
+.bg-light-success {
+    background-color: rgba(var(--success-rgb), 0.1);
+}
+
+.bg-light-warning {
+    background-color: rgba(var(--warning-rgb), 0.1);
+}
+
+.bg-light-danger {
+    background-color: rgba(var(--danger-rgb), 0.1);
+}
+
+.bg-light-info {
+    background-color: rgba(var(--info-rgb), 0.1);
 }
 
 /* Cards */
