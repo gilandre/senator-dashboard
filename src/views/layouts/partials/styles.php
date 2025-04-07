@@ -363,11 +363,17 @@ body {
 
 /* Footer */
 .footer {
+    flex-shrink: 0;
+    position: relative;
+    width: 100%;
     background-color: white;
-    padding: 20px;
-    text-align: center;
-    box-shadow: 0 -2px 5px rgba(0,0,0,0.1);
-    transition: all 0.3s ease;
+    z-index: 10;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+}
+
+.footer .badge {
+    font-weight: 500;
+    padding: 0.4em 0.6em;
 }
 
 /* Responsive */
