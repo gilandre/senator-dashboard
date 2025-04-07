@@ -337,4 +337,36 @@ class User
         $stmt = $this->db->query("SELECT * FROM users");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    /**
+     * Vérifie si un utilisateur existe avec l'email donné
+     */
+    public static function existsByEmail(string $email): bool
+    {
+        return self::findByEmail($email) !== null;
+    }
+    
+    /**
+     * Crée un utilisateur admin par défaut si aucun n'existe
+     */
+    public static function createDefaultAdminIfNecessary(): void
+    {
+        $db = self::getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM users");
+        $userCount = (int) $stmt->fetchColumn();
+        
+        if ($userCount === 0) {
+            // Créer l'utilisateur admin par défaut
+            $user = new self();
+            $user->username = 'admin';
+            $user->email = 'admin@example.com';
+            $user->password = password_hash('admin123', PASSWORD_DEFAULT);
+            $user->role = 'admin';
+            $user->created_at = date('Y-m-d H:i:s');
+            $user->updated_at = date('Y-m-d H:i:s');
+            $user->save();
+            
+            error_log("Utilisateur admin par défaut créé avec succès");
+        }
+    }
 } 

@@ -5,34 +5,37 @@ header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-require_once __DIR__ . '/../vendor/autoload.php';
+// Inclure l'autoloader
+include __DIR__ . '/../vendor/autoload.php';
 
-use App\Core\Router;
-use App\Core\Database;
+// Import des contrôleurs
 use App\Controllers\AuthController;
 use App\Controllers\DashboardController;
 use App\Controllers\UserController;
 use App\Controllers\ReportController;
 use App\Controllers\ImportController;
+use App\Controllers\ProfileController;
 
-// Start session
+// Démarrer la session
 session_start();
 
-// Load environment variables
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
+// Charger les variables d'environnement
+$dotenv = \Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 
-// Initialize database connection
-$db = Database::getInstance([
-    'host' => $_ENV['DB_HOST'],
-    'dbname' => $_ENV['DB_DATABASE'],
-    'username' => $_ENV['DB_USERNAME'],
-    'password' => $_ENV['DB_PASSWORD'],
+// Initialiser la base de données
+$db = \App\Core\Database::getInstance([
+    'host' => $_ENV['DB_HOST'] ?? 'localhost',
+    'dbname' => $_ENV['DB_DATABASE'] ?? 'senator_db',
+    'username' => $_ENV['DB_USERNAME'] ?? 'root',
+    'password' => $_ENV['DB_PASSWORD'] ?? '',
     'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4'
 ]);
 
 // Initialize router
-$router = new Router();
+$router = new \App\Core\Router();
+
+// Register routes
 
 // Auth routes
 $router->get('/login', [AuthController::class, 'showLogin']);
@@ -67,7 +70,19 @@ $router->delete('/reports/{id}', [ReportController::class, 'delete']);
 
 // Import routes
 $router->get('/import', [ImportController::class, 'index']);
-$router->post('/import', [ImportController::class, 'import']);
+$router->post('/import/upload', [ImportController::class, 'upload']);
+$router->get('/import/validate', [ImportController::class, 'validateView']);
+$router->post('/import/process', [ImportController::class, 'process']);
+$router->get('/import/confirmation', [ImportController::class, 'confirmation']);
+$router->get('/import/finish', [ImportController::class, 'finish']);
+$router->post('/import/finish', [ImportController::class, 'finish']);
+$router->get('/import/get-history', [ImportController::class, 'getHistory']);
+$router->get('/import/history', [ImportController::class, 'history']);
+
+// Profile routes
+$router->get('/profile', [ProfileController::class, 'index']);
+$router->post('/profile/update', [ProfileController::class, 'update']);
+$router->post('/profile/changePassword', [ProfileController::class, 'changePassword']);
 
 // Run the application
 $router->dispatch(); 

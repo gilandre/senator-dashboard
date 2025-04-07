@@ -12,6 +12,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (sidebarState === 'collapsed' && sidebar && content) {
         sidebar.classList.add('collapsed');
         content.classList.add('expanded');
+        if (sidebarCollapse) {
+            sidebarCollapse.querySelector('i').classList.remove('fa-chevron-left');
+            sidebarCollapse.querySelector('i').classList.add('fa-chevron-right');
+        }
     }
     
     if (sidebarCollapse && sidebar && content) {
@@ -24,15 +28,16 @@ document.addEventListener('DOMContentLoaded', function() {
             sidebar.classList.toggle('collapsed');
             content.classList.toggle('expanded');
             
-            // Sauvegarder la préférence de l'utilisateur
+            // Changer l'icône du bouton
             if (sidebar.classList.contains('collapsed')) {
+                sidebarCollapse.querySelector('i').classList.remove('fa-chevron-left');
+                sidebarCollapse.querySelector('i').classList.add('fa-chevron-right');
                 localStorage.setItem('sidebarState', 'collapsed');
             } else {
+                sidebarCollapse.querySelector('i').classList.remove('fa-chevron-right');
+                sidebarCollapse.querySelector('i').classList.add('fa-chevron-left');
                 localStorage.setItem('sidebarState', 'expanded');
             }
-            
-            // Ajouter une classe au bouton pour changer son apparence
-            sidebarCollapse.classList.toggle('active');
         });
     }
     
@@ -47,31 +52,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }, 5000);
     });
     
-    // NOUVELLE IMPLÉMENTATION SIMPLIFIÉE DU DROPDOWN
+    // Gestion du dropdown utilisateur
     const userBtn = document.getElementById('userDropdown');
     const userMenu = document.getElementById('userDropdownMenu');
     
     if (userBtn && userMenu) {
         userBtn.addEventListener('click', function(e) {
-            e.preventDefault();
             e.stopPropagation();
-            
-            // Toggle menu visibility with animation
             userMenu.classList.toggle('show');
         });
         
-        // Close when clicking outside
+        // Fermer le dropdown quand on clique ailleurs
         document.addEventListener('click', function(e) {
-            if (userMenu.classList.contains('show') && 
-                !userBtn.contains(e.target) && 
-                !userMenu.contains(e.target)) {
-                userMenu.classList.remove('show');
-            }
-        });
-        
-        // Close when pressing ESC key
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape' && userMenu.classList.contains('show')) {
+            if (!userBtn.contains(e.target) && !userMenu.contains(e.target)) {
                 userMenu.classList.remove('show');
             }
         });

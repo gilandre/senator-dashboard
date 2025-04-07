@@ -183,7 +183,20 @@ class ValidationService
             throw new \RuntimeException('Erreur lors de l\'upload du fichier');
         }
 
-        if ($file['type'] !== 'text/csv') {
+        // Liste des types MIME acceptables pour les fichiers CSV
+        $acceptableMimeTypes = [
+            'text/csv', 
+            'text/plain', 
+            'application/csv', 
+            'application/excel', 
+            'application/vnd.ms-excel', 
+            'application/vnd.msexcel'
+        ];
+
+        // Vérifier si l'extension est .csv
+        $fileExtension = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        
+        if (!in_array($file['type'], $acceptableMimeTypes) && $fileExtension !== 'csv') {
             throw new \RuntimeException('Le fichier doit être au format CSV');
         }
 

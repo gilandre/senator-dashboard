@@ -141,6 +141,69 @@ class ReportService
         return $this->database->query($sql, [$startDate, $endDate])->fetchAll();
     }
 
+    /**
+     * Génère un rapport détaillé sur les heures de travail
+     * 
+     * @param string $startDate Date de début au format Y-m-d
+     * @param string $endDate Date de fin au format Y-m-d
+     * @param string|null $group Groupe à filtrer (optionnel)
+     * @return array Données du rapport
+     */
+    public function generateWorkingHoursReport(string $startDate, string $endDate, ?string $group = null): array
+    {
+        $params = [$startDate, $endDate];
+        $groupCondition = '';
+        
+        if ($group) {
+            $groupCondition = 'AND group_name = ?';
+            $params[] = $group;
+        }
+
+        $sql = "WITH daily_entries AS (
+                    SELECT
+                        badge_number,
+                        first_name,
+                        last_name,
+                        group_name,
+                        event_date,
+                        MIN(CASE WHEN event_type = 'Utilisateur accepté' THEN TIME(event_time) END) as first_entry,
+                        MAX(CASE WHEN event_type = 'Utilisateur accepté' THEN TIME(event_time) END) as last_exit,
+                        TIMEDIFF(
+                            MAX(CASE WHEN event_type = 'Utilisateur accepté' THEN event_time END),
+                            MIN(CASE WHEN event_type = 'Utilisateur accepté' THEN event_time END)
+                        ) as duration
+                    FROM access_logs
+                    WHERE event_date BETWEEN ? AND ?
+                    {$groupCondition}
+                    GROUP BY badge_number, first_name, last_name, group_name, event_date
+                )
+                SELECT
+                    badge_number,
+                    first_name,
+                    last_name,
+                    group_name,
+                    event_date,
+                    first_entry,
+                    last_exit,
+                    duration,
+                    TIME_TO_SEC(duration) / 3600 as hours_worked,
+                    CASE
+                        WHEN TIME_TO_SEC(duration) / 3600 < 4 THEN '< 4h'
+                        WHEN TIME_TO_SEC(duration) / 3600 < 6 THEN '4-6h'
+                        WHEN TIME_TO_SEC(duration) / 3600 < 8 THEN '6-8h'
+                        WHEN TIME_TO_SEC(duration) / 3600 < 9 THEN '8-9h'
+                        ELSE '> 9h'
+                    END as duration_category,
+                    CASE
+                        WHEN TIME(first_entry) < '09:00:00' THEN 'À l''heure'
+                        ELSE 'En retard'
+                    END as punctuality
+                FROM daily_entries
+                ORDER BY event_date, group_name, last_name, first_name";
+
+        return $this->database->query($sql, $params)->fetchAll();
+    }
+
     public function generateExcelReport(array $data, string $type): string
     {
         $spreadsheet = new Spreadsheet();
@@ -155,6 +218,9 @@ class ReportService
                 break;
             case 'status':
                 $this->formatStatusReport($sheet, $data);
+                break;
+            case 'workinghours':
+                $this->formatWorkingHoursReport($sheet, $data);
                 break;
             default:
                 throw new \RuntimeException('Type de rapport non supporté');
@@ -291,6 +357,72 @@ class ReportService
 
         // Ajustement automatique des colonnes
         foreach (range('A', 'E') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    /**
+     * Formate un rapport d'heures de travail pour Excel
+     *
+     * @param Worksheet $sheet La feuille Excel à formater
+     * @param array $data Les données à inclure dans le rapport
+     */
+    private function formatWorkingHoursReport(Worksheet $sheet, array $data): void
+    {
+        // En-têtes
+        $sheet->setCellValue('A1', 'Badge');
+        $sheet->setCellValue('B1', 'Nom');
+        $sheet->setCellValue('C1', 'Prénom');
+        $sheet->setCellValue('D1', 'Groupe');
+        $sheet->setCellValue('E1', 'Date');
+        $sheet->setCellValue('F1', 'Première entrée');
+        $sheet->setCellValue('G1', 'Dernière sortie');
+        $sheet->setCellValue('H1', 'Durée');
+        $sheet->setCellValue('I1', 'Heures');
+        $sheet->setCellValue('J1', 'Catégorie');
+        $sheet->setCellValue('K1', 'Ponctualité');
+
+        // Style des en-têtes
+        $headerStyle = [
+            'font' => ['bold' => true],
+            'fill' => [
+                'fillType' => Fill::FILL_SOLID,
+                'startColor' => ['rgb' => 'E2EFDA']
+            ]
+        ];
+        $sheet->getStyle('A1:K1')->applyFromArray($headerStyle);
+
+        // Données
+        $row = 2;
+        foreach ($data as $record) {
+            $sheet->setCellValue('A' . $row, $record['badge_number']);
+            $sheet->setCellValue('B' . $row, $record['last_name']);
+            $sheet->setCellValue('C' . $row, $record['first_name']);
+            $sheet->setCellValue('D' . $row, $record['group_name']);
+            $sheet->setCellValue('E' . $row, $record['event_date']);
+            $sheet->setCellValue('F' . $row, $record['first_entry']);
+            $sheet->setCellValue('G' . $row, $record['last_exit']);
+            $sheet->setCellValue('H' . $row, $record['duration']);
+            $sheet->setCellValue('I' . $row, round($record['hours_worked'], 2));
+            $sheet->setCellValue('J' . $row, $record['duration_category']);
+            $sheet->setCellValue('K' . $row, $record['punctuality']);
+            
+            // Coloration conditionnelle
+            if ($record['punctuality'] === 'En retard') {
+                $sheet->getStyle('F' . $row)->getFont()->getColor()->setRGB('FF0000');
+            }
+            
+            if ($record['hours_worked'] > 9) {
+                $sheet->getStyle('I' . $row)->getFont()->getColor()->setRGB('008800');
+            } elseif ($record['hours_worked'] < 7) {
+                $sheet->getStyle('I' . $row)->getFont()->getColor()->setRGB('FF8800');
+            }
+            
+            $row++;
+        }
+
+        // Ajustement automatique des colonnes
+        foreach (range('A', 'K') as $col) {
             $sheet->getColumnDimension($col)->setAutoSize(true);
         }
     }

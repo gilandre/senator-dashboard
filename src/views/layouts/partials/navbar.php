@@ -6,43 +6,70 @@
             <i class="fas fa-bars"></i>
         </button>
 
-        <!-- Brand -->
-        <a class="navbar-brand" href="/">
-            <img src="/assets/images/logo.svg" alt="SENATOR Logo" height="30">
-        </a>
+        <!-- Page Title -->
+        <div class="page-title-display">
+            <span class="page-title-text">
+                <?php echo isset($pageTitle) ? htmlspecialchars($pageTitle) : 'SENATOR'; ?>
+            </span>
+        </div>
 
         <!-- Right Navigation -->
         <div class="ms-auto">
-            <ul class="navbar-nav">
-                <!-- Notifications -->
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="notificationsDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="fas fa-bell"></i>
-                        <span class="badge bg-danger rounded-circle">3</span>
+            <!-- User Menu -->
+            <div class="dropdown-container">
+                <button class="user-icon-btn" id="userDropdown">
+                    <i class="fas fa-user-circle"></i>
+                </button>
+                <div class="custom-dropdown-menu" id="userDropdownMenu">
+                    <!-- En-tête du profil utilisateur -->
+                    <div class="dropdown-profile-header">
+                        <div class="dropdown-avatar">
+                            <i class="fas fa-user-circle"></i>
+                        </div>
+                        <div class="dropdown-user-info">
+                            <span class="dropdown-username">
+                                <?php echo isset($_SESSION['user']['username']) ? htmlspecialchars($_SESSION['user']['username']) : 'Utilisateur'; ?>
+                            </span>
+                            <span class="dropdown-role">
+                                <?php echo isset($_SESSION['user']['role']) ? htmlspecialchars($_SESSION['user']['role']) : 'Invité'; ?>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="dropdown-divider"></div>
+                    <a href="/profile" class="custom-dropdown-item">
+                        <i class="fas fa-user"></i> Profil
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><h6 class="dropdown-header">Notifications</h6></li>
-                        <li><a class="dropdown-item" href="#">Nouveau rapport disponible</a></li>
-                        <li><a class="dropdown-item" href="#">Import terminé</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item text-center" href="#">Voir toutes les notifications</a></li>
-                    </ul>
-                </li>
-
-                <!-- User Menu -->
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="fas fa-user-circle"></i>
-                        <?php echo isset($_SESSION['user']) ? htmlspecialchars($_SESSION['user']['username']) : 'Utilisateur'; ?>
+                    <a href="/settings" class="custom-dropdown-item">
+                        <i class="fas fa-cog"></i> Paramètres
                     </a>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="/profile"><i class="fas fa-user me-2"></i>Profil</a></li>
-                        <li><a class="dropdown-item" href="/settings"><i class="fas fa-cog me-2"></i>Paramètres</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="/logout"><i class="fas fa-sign-out-alt me-2"></i>Déconnexion</a></li>
-                    </ul>
-                </li>
-            </ul>
+                    <div class="dropdown-divider"></div>
+                    <a href="/logout" class="custom-dropdown-item">
+                        <i class="fas fa-sign-out-alt"></i> Déconnexion
+                    </a>
+                </div>
+            </div>
         </div>
     </div>
-</nav> 
+</nav>
+
+<!-- Script pour le menu utilisateur -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const userDropdown = document.getElementById('userDropdown');
+    const userDropdownMenu = document.getElementById('userDropdownMenu');
+    
+    if (userDropdown && userDropdownMenu) {
+        userDropdown.addEventListener('click', function(e) {
+            e.preventDefault();
+            userDropdownMenu.classList.toggle('show');
+        });
+        
+        // Fermer le menu si on clique ailleurs
+        document.addEventListener('click', function(e) {
+            if (!userDropdown.contains(e.target) && !userDropdownMenu.contains(e.target)) {
+                userDropdownMenu.classList.remove('show');
+            }
+        });
+    }
+});
+</script> 

@@ -80,18 +80,27 @@ class Router
             throw new \RuntimeException("Method {$method} not found in controller {$class}");
         }
 
-        // Vérifier si la route nécessite une authentification
-        $publicRoutes = ['/login', '/logout', '/forgot-password', '/reset-password'];
-        
-        if (!in_array($path, $publicRoutes)) {
-            // Vérification de l'authentification
-            $auth = new Auth();
-            if (!$auth->isLoggedIn()) {
-                error_log("Access denied for {$method} {$path}: User not logged in");
-                // Rediriger vers la page de connexion
-                header('Location: /login');
-                exit;
-            }
+        // Autoriser l'accès aux routes publiques sans authentification
+        if (
+            $path === '/login' || 
+            $path === '/logout' || 
+            $path === '/forgot-password' || 
+            $path === '/reset-password' || 
+            $path === '/import/get-history'
+        ) {
+            $accessAllowed = true;
+        } 
+        // Sinon vérifier si l'utilisateur est connecté
+        else {
+            $auth = new \App\Core\Auth();
+            $accessAllowed = $auth->isLoggedIn();
+        }
+
+        if (!$accessAllowed) {
+            error_log("Access denied for {$method} {$path}: User not logged in");
+            // Rediriger vers la page de connexion
+            header('Location: /login');
+            exit;
         }
 
         error_log("Calling {$class}::{$method}");
@@ -147,7 +156,13 @@ class Router
         $this->get("/dashboard", ["DashboardController", "index"]);
         $this->get("/dashboard/data", ["DashboardController", "getData"]);
         $this->get("/import", ["ImportController", "index"]);
-        $this->post("/import", ["ImportController", "import"]);
+        $this->post("/import/upload", ["ImportController", "upload"]);
+        $this->get("/import/validate", ["ImportController", "validateView"]);
+        $this->post("/import/process", ["ImportController", "process"]);
+        $this->get("/import/confirmation", ["ImportController", "confirmation"]);
+        $this->post("/import/finish", ["ImportController", "finish"]);
+        $this->get("/import/history", ["ImportController", "history"]);
+        $this->get("/import/get-history", ["ImportController", "getHistory"]);
         $this->get("/reports", ["ReportController", "index"]);
         $this->get("/reports/create", ["ReportController", "create"]);
         $this->post("/reports", ["ReportController", "store"]);

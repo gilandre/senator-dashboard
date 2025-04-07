@@ -18,17 +18,46 @@ class ReportController extends Controller
     public function index(): void
     {
         // Récupération des paramètres de filtrage
-        $startDate = $_GET['start_date'] ?? date('Y-m-d', strtotime('-7 days'));
-        $endDate = $_GET['end_date'] ?? date('Y-m-d');
+        $startDate = $_GET['start_date'] ?? $_GET['date'] ?? date('Y-m-d', strtotime('-7 days'));
+        $endDate = $_GET['end_date'] ?? $_GET['date'] ?? date('Y-m-d');
         $group = $_GET['group'] ?? null;
         $status = $_GET['status'] ?? null;
         $reportType = $_GET['type'] ?? 'attendance';
+        $metric = $_GET['metric'] ?? null;
+        
+        // Si on vient du dashboard avec un KPI spécifique, configurer le filtre approprié
+        if ($metric) {
+            switch ($metric) {
+                case 'total':
+                    // Tous les employés présents ce jour-là
+                    $status = 'all';
+                    break;
+                case 'ontime':
+                    // Employés arrivés à l'heure
+                    $status = 'ontime';
+                    break;
+                case 'late':
+                    // Employés arrivés en retard
+                    $status = 'late';
+                    break;
+                case 'hours':
+                    // Focus sur les heures de travail
+                    $reportType = 'workinghours';
+                    break;
+            }
+            
+            // Si on vient du dashboard avec une date précise, utiliser celle-ci comme période
+            if (isset($_GET['date'])) {
+                $startDate = $endDate = $_GET['date'];
+            }
+        }
 
         // Génération des données du rapport
         $data = match ($reportType) {
             'attendance' => $this->reportService->generateAttendanceReport($startDate, $endDate, $group, $status),
             'location' => $this->reportService->generateLocationReport($startDate),
             'status' => $this->reportService->getStatusStatistics($startDate, $endDate),
+            'workinghours' => $this->reportService->generateWorkingHoursReport($startDate, $endDate, $group),
             default => throw new \RuntimeException('Type de rapport non supporté')
         };
 
