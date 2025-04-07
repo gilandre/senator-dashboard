@@ -5,39 +5,41 @@ document.addEventListener('DOMContentLoaded', function() {
     const sidebar = document.getElementById('sidebar');
     const content = document.getElementById('content');
     
-    // Vérifier s'il existe une préférence utilisateur sauvegardée
+    // Restaurer l'état du sidebar au chargement
     const sidebarState = localStorage.getItem('sidebarState');
-    
-    // Appliquer l'état sauvegardé au chargement de la page
-    if (sidebarState === 'collapsed' && sidebar && content) {
+    if (sidebarState === 'collapsed' && sidebar) {
         sidebar.classList.add('collapsed');
-        content.classList.add('expanded');
+        if (content) content.classList.add('expanded');
+        
         if (sidebarCollapse) {
-            sidebarCollapse.querySelector('i').classList.remove('fa-chevron-left');
-            sidebarCollapse.querySelector('i').classList.add('fa-chevron-right');
+            const icon = sidebarCollapse.querySelector('i');
+            if (icon) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            }
         }
     }
     
+    // Toggle sidebar sur click
     if (sidebarCollapse && sidebar && content) {
         sidebarCollapse.addEventListener('click', function() {
-            // Pour les appareils mobiles
-            sidebar.classList.toggle('active');
-            content.classList.toggle('active');
-            
-            // Pour le mode collapsed
             sidebar.classList.toggle('collapsed');
             content.classList.toggle('expanded');
             
-            // Changer l'icône du bouton
-            if (sidebar.classList.contains('collapsed')) {
-                sidebarCollapse.querySelector('i').classList.remove('fa-chevron-left');
-                sidebarCollapse.querySelector('i').classList.add('fa-chevron-right');
-                localStorage.setItem('sidebarState', 'collapsed');
-            } else {
-                sidebarCollapse.querySelector('i').classList.remove('fa-chevron-right');
-                sidebarCollapse.querySelector('i').classList.add('fa-chevron-left');
-                localStorage.setItem('sidebarState', 'expanded');
+            // Changer l'icône
+            const icon = sidebarCollapse.querySelector('i');
+            if (icon) {
+                if (sidebar.classList.contains('collapsed')) {
+                    icon.classList.remove('fa-chevron-left');
+                    icon.classList.add('fa-chevron-right');
+                } else {
+                    icon.classList.remove('fa-chevron-right');
+                    icon.classList.add('fa-chevron-left');
+                }
             }
+            
+            // Sauvegarder l'état dans localStorage
+            localStorage.setItem('sidebarState', sidebar.classList.contains('collapsed') ? 'collapsed' : 'expanded');
         });
     }
     
@@ -58,11 +60,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (userBtn && userMenu) {
         userBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
+            e.preventDefault();
             userMenu.classList.toggle('show');
         });
         
-        // Fermer le dropdown quand on clique ailleurs
+        // Fermer le menu si on clique ailleurs
         document.addEventListener('click', function(e) {
             if (!userBtn.contains(e.target) && !userMenu.contains(e.target)) {
                 userMenu.classList.remove('show');
@@ -79,4 +81,10 @@ document.addEventListener('DOMContentLoaded', function() {
             responsive: true
         });
     }
+    
+    // Initialiser les tooltips Bootstrap
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 });

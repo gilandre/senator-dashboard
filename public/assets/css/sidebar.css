@@ -67,6 +67,7 @@
     text-decoration: none;
     transition: all 0.2s ease;
     border-left: 4px solid transparent;
+    font-weight: 500;
 }
 
 .sidebar .nav-link:hover {
@@ -78,6 +79,7 @@
     color: #fff;
     background-color: var(--secondary-color, #3498db);
     border-left: 4px solid #fff;
+    font-weight: 600;
 }
 
 .sidebar .nav-link i {
@@ -88,7 +90,9 @@
 }
 
 .sidebar .nav-link span {
-    font-size: 0.9rem;
+    font-size: 0.95rem;
+    font-weight: 500;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .sidebar.collapsed .nav-link span {

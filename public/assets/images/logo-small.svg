@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="100" height="30" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .logo-text { font-family: Arial, sans-serif; font-weight: bold; font-size: 14px; }
+  </style>
+  <rect x="5" y="5" width="20" height="20" fill="#2c3e50" rx="4" />
+  <text x="30" y="20" class="logo-text" fill="#2c3e50">SENATOR</text>
+</svg> 

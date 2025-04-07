@@ -2,8 +2,8 @@
 <nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
     <div class="container-fluid">
         <!-- Sidebar Toggle -->
-        <button class="btn btn-link" id="sidebarToggle">
-            <i class="fas fa-bars"></i>
+        <button type="button" id="sidebarCollapse" class="btn btn-link">
+            <i class="fas fa-chevron-left"></i>
         </button>
 
         <!-- Page Title -->

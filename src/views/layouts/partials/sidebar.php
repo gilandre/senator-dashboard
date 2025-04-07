@@ -52,14 +52,24 @@
 <!-- Sidebar Toggle Script -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const sidebarToggle = document.getElementById('sidebarToggle');
+    const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebar = document.getElementById('sidebar');
     const body = document.body;
     
-    if (sidebarToggle && sidebar) {
-        sidebarToggle.addEventListener('click', function() {
+    if (sidebarCollapse && sidebar) {
+        sidebarCollapse.addEventListener('click', function() {
             sidebar.classList.toggle('collapsed');
             body.classList.toggle('sidebar-collapsed');
+            
+            // Changer l'icône du bouton
+            const icon = sidebarCollapse.querySelector('i');
+            if (sidebar.classList.contains('collapsed')) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            } else {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-left');
+            }
             
             // Sauvegarder l'état dans le localStorage
             localStorage.setItem('sidebarState', sidebar.classList.contains('collapsed') ? 'collapsed' : 'expanded');
@@ -70,6 +80,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (sidebarState === 'collapsed') {
             sidebar.classList.add('collapsed');
             body.classList.add('sidebar-collapsed');
+            
+            // Ajuster l'icône
+            const icon = sidebarCollapse.querySelector('i');
+            if (icon) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            }
         }
     }
 });
