@@ -63,10 +63,10 @@ ob_start();
     </div>
 
     <!-- KPI Cards Row -->
-    <div class="kpi-section row g-1 mx-0">
+    <div class="kpi-section row g-3 mb-4 mx-0">
         <!-- Total Personnel Card -->
-        <div class="col-xl-3 col-lg-3 col-md-3 mb-2">
-            <div class="dashboard-card border-accent-primary kpi-card">
+        <div class="col-xl-3 col-lg-3 col-md-6 col-sm-12">
+            <div class="dashboard-card border-accent-primary kpi-card h-100">
                 <div class="card-body">
                     <div class="card-content">
                         <div class="card-info">
@@ -95,8 +95,8 @@ ob_start();
         </div>
 
         <!-- On Time Card -->
-        <div class="col-xl-3 col-lg-3 col-md-3 mb-2">
-            <div class="dashboard-card border-accent-success kpi-card">
+        <div class="col-xl-3 col-lg-3 col-md-6 col-sm-12">
+            <div class="dashboard-card border-accent-success kpi-card h-100">
                 <div class="card-body">
                     <div class="card-content">
                         <div class="card-info">
@@ -125,8 +125,8 @@ ob_start();
         </div>
 
         <!-- Late Card -->
-        <div class="col-xl-3 col-lg-3 col-md-3 mb-2">
-            <div class="dashboard-card border-accent-warning kpi-card">
+        <div class="col-xl-3 col-lg-3 col-md-6 col-sm-12">
+            <div class="dashboard-card border-accent-warning kpi-card h-100">
                 <div class="card-body">
                     <div class="card-content">
                         <div class="card-info">
@@ -155,8 +155,8 @@ ob_start();
         </div>
 
         <!-- Average Working Hours Card -->
-        <div class="col-xl-3 col-lg-3 col-md-3 mb-2">
-            <div class="dashboard-card border-accent-info kpi-card">
+        <div class="col-xl-3 col-lg-3 col-md-6 col-sm-12">
+            <div class="dashboard-card border-accent-info kpi-card h-100">
                 <div class="card-body">
                     <div class="card-content">
                         <div class="card-info">
@@ -350,6 +350,32 @@ ob_start();
     .dashboard-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    
+    /* KPI Section Styles */
+    .kpi-section {
+        margin-bottom: 2rem;
+    }
+    
+    .kpi-card {
+        display: flex;
+        flex-direction: column;
+        min-height: 160px;
+    }
+    
+    .kpi-card .card-body {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        padding: 1.25rem;
+    }
+    
+    .kpi-card .card-content {
+        flex-grow: 1;
+    }
+    
+    .kpi-card .card-trend {
+        margin-top: auto;
     }
     
     /* Card Header */
