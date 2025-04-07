@@ -3,13 +3,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // Handle sidebar toggle
     const sidebarCollapse = document.getElementById('sidebarCollapse');
     const sidebar = document.getElementById('sidebar');
-    const content = document.getElementById('content');
+    const mainContent = document.querySelector('.main-content');
+    const body = document.body;
     
     // Restaurer l'état du sidebar au chargement
     const sidebarState = localStorage.getItem('sidebarState');
     if (sidebarState === 'collapsed' && sidebar) {
         sidebar.classList.add('collapsed');
-        if (content) content.classList.add('expanded');
+        body.classList.add('sidebar-collapsed');
+        if (mainContent) mainContent.classList.add('expanded');
         
         if (sidebarCollapse) {
             const icon = sidebarCollapse.querySelector('i');
@@ -21,10 +23,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // Toggle sidebar sur click
-    if (sidebarCollapse && sidebar && content) {
+    if (sidebarCollapse && sidebar) {
         sidebarCollapse.addEventListener('click', function() {
             sidebar.classList.toggle('collapsed');
-            content.classList.toggle('expanded');
+            body.classList.toggle('sidebar-collapsed');
+            if (mainContent) mainContent.classList.toggle('expanded');
             
             // Changer l'icône
             const icon = sidebarCollapse.querySelector('i');
