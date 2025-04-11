@@ -197,3 +197,78 @@ Pour contribuer au développement:
 2. Créer une branche pour votre fonctionnalité
 3. Implémenter et tester vos modifications
 4. Soumettre une pull request 
+
+# Améliorations du système d'importation CSV
+
+Ce projet contient des améliorations pour le système d'importation de données CSV dans l'application SENATOR_INVESTECH.
+
+## Problèmes résolus
+
+Les améliorations suivantes ont été apportées pour résoudre les problèmes d'importation :
+
+1. **Gestion robuste des dates et heures**
+   - Support de multiples formats de date (DD/MM/YYYY, YYYY-MM-DD, etc.)
+   - Nettoyage automatique des formats d'heure invalides
+   - Valeurs par défaut pour les champs vides ou invalides
+
+2. **Détection efficace des doublons**
+   - Vérification améliorée des enregistrements existants
+   - Journalisation détaillée des doublons détectés
+
+3. **Validation et gestion des erreurs avancées**
+   - Validation des champs obligatoires avant insertion
+   - Exceptions typées pour différentes catégories d'erreurs
+   - Stockage des détails des erreurs pour faciliter le diagnostic
+
+4. **Rapports et statistiques d'importation**
+   - Statistiques complètes (total, importés, doublons, erreurs)
+   - Calcul du taux de réussite
+   - Liste détaillée des erreurs rencontrées
+
+## Comment intégrer les améliorations
+
+Le fichier `src/controllers/ImportControllerPatch.php` contient des modèles de méthodes à intégrer dans la classe `ImportController` :
+
+1. **Remplacer la méthode `formatDateTime`**
+   - Cette méthode a été améliorée pour supporter de multiples formats de date et d'heure
+   - Elle corrige automatiquement les erreurs fréquentes dans les fichiers CSV
+
+2. **Ajouter la méthode `isDuplicate`**
+   - Cette méthode optimise la détection des enregistrements en double
+   - Elle peut être personnalisée pour ajuster les critères de détection
+
+3. **Remplacer la méthode `insertAccessLog`**
+   - Gestion améliorée des erreurs et validation des données
+   - Support des valeurs NULL et des champs manquants
+
+4. **Utiliser la nouvelle méthode `importDataSimple`**
+   - Version simplifiée et plus robuste de la méthode d'importation
+   - Fournit des statistiques détaillées sur le résultat de l'importation
+
+## Comment tester les améliorations
+
+Le fichier `test_import_standalone.php` permet de tester les améliorations en dehors de l'application principale.
+
+Pour exécuter le test :
+```bash
+php test_import_standalone.php
+```
+
+Le test génère automatiquement des données de test avec différents scénarios (données valides, invalides, doublons, etc.)
+et affiche les résultats détaillés de l'importation.
+
+## Notes d'implémentation
+
+- Assurez-vous d'adapter le namespace du modèle `AccessLog` en fonction de votre structure de projet
+- Vérifiez que la structure de la table `access_logs` correspond aux champs utilisés dans le code
+- Les méthodes utilisent la journalisation via `error_log()` pour faciliter le débogage
+
+## Statistiques d'importation
+
+Le système génère désormais des statistiques détaillées sur chaque importation :
+
+- **Total** : Nombre total de lignes dans le fichier CSV
+- **Importés** : Nombre de lignes importées avec succès
+- **Doublons** : Nombre de lignes ignorées car déjà présentes en base
+- **Erreurs** : Nombre de lignes non importées en raison d'erreurs
+- **Taux de succès** : Pourcentage de lignes traitées avec succès (importées + doublons) 

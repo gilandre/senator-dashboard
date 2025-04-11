@@ -8,11 +8,18 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) NOT NULL UNIQUE,
     role ENUM('admin', 'manager', 'user') NOT NULL DEFAULT 'user',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    last_failed_attempt DATETIME,
+    reset_token VARCHAR(100),
+    reset_token_expires_at DATETIME,
+    password_changed_at DATETIME,
     last_login DATETIME,
     login_attempts INT NOT NULL DEFAULT 0,
     last_attempt DATETIME,
     password_reset_token VARCHAR(100),
     password_reset_expires DATETIME,
+    password_expired BOOLEAN NOT NULL DEFAULT FALSE,
     remember_token VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -101,6 +108,41 @@ CREATE TABLE IF NOT EXISTS import_logs (
     INDEX idx_status (status),
     INDEX idx_created_at (created_at),
     INDEX idx_user_status (user_id, status)
+) ENGINE=InnoDB;
+
+-- Table de l'historique des imports
+CREATE TABLE IF NOT EXISTS import_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    total_records INT NOT NULL DEFAULT 0,
+    imported_records INT NOT NULL DEFAULT 0,
+    duplicate_records INT NOT NULL DEFAULT 0,
+    error_records INT NOT NULL DEFAULT 0,
+    status ENUM('success', 'error', 'partial') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB;
+
+-- Table des doublons d'import
+CREATE TABLE IF NOT EXISTS import_duplicates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    import_id INT NOT NULL,
+    badge_number VARCHAR(50) NOT NULL,
+    event_date DATE NOT NULL,
+    event_time TIME NOT NULL,
+    event_type VARCHAR(50) NOT NULL,
+    central VARCHAR(100),
+    group_name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (import_id) REFERENCES import_history(id) ON DELETE CASCADE,
+    INDEX idx_import_id (import_id),
+    INDEX idx_badge_number (badge_number),
+    INDEX idx_event_date (event_date),
+    INDEX idx_event_type (event_type)
 ) ENGINE=InnoDB;
 
 -- Création de l'utilisateur admin par défaut

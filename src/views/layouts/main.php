@@ -1,34 +1,32 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SENATOR - <?= htmlspecialchars($pageTitle ?? 'SENATOR') ?></title>
+    
+    <!-- Inclusion des meta tags -->
     <?php include __DIR__ . '/partials/meta.php'; ?>
+    
+    <!-- Inclusion des styles -->
     <?php include __DIR__ . '/partials/styles.php'; ?>
 </head>
-<body>
-    <?php
-    // Définir la page courante si elle n'est pas définie
-    $currentPage = $currentPage ?? basename($_SERVER['PHP_SELF'], '.php');
-    ?>
-
+<body class="<?= isset($currentPage) ? 'page-' . $currentPage : '' ?>">
     <!-- Wrapper -->
     <div class="wrapper">
         <!-- Sidebar -->
         <?php include __DIR__ . '/partials/sidebar.php'; ?>
-
+        
         <!-- Main Content -->
         <div class="main-content">
             <!-- Topbar -->
-            <?php include __DIR__ . '/partials/navbar.php'; ?>
-
+            <?php if (!isset($hideGlobalTopbar) || !$hideGlobalTopbar): ?>
+                <?php include __DIR__ . '/partials/navbar.php'; ?>
+            <?php endif; ?>
+            
             <!-- Page Content -->
-            <div class="container-fluid">
-                <?php if (isset($title)): ?>
-                    <h1 class="mb-4"><?php echo $title; ?></h1>
-                <?php endif; ?>
-                
-                <?php if (isset($content)): ?>
-                    <?php echo $content; ?>
-                <?php endif; ?>
+            <div class="container-fluid py-4">
+                <?php echo $content ?? '' ?>
             </div>
         </div>
     </div>
@@ -36,7 +34,7 @@
     <!-- Footer -->
     <?php include __DIR__ . '/partials/footer.php'; ?>
     
-    <!-- Scripts -->
+    <!-- Scripts (chargés à la fin du body) -->
     <?php include __DIR__ . '/partials/scripts.php'; ?>
 </body>
 </html> 

@@ -29,14 +29,24 @@ class Auth
         error_log("loadUserFromSession: Statut de la session - " . session_status());
         error_log("loadUserFromSession: Contenu de SESSION - " . print_r($_SESSION, true));
         
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if (isset($_SESSION['user_id'])) {
             error_log("loadUserFromSession: user_id trouvé - " . $_SESSION['user_id']);
-            $this->user = $this->userModel->findById($_SESSION['user_id']);
-            if ($this->user) {
-                error_log("loadUserFromSession: Utilisateur chargé avec succès");
-                $this->permissions = $this->permissionModel->getUserPermissions($this->user->getId());
-            } else {
-                error_log("loadUserFromSession: Utilisateur non trouvé en base de données");
+            try {
+                $this->user = $this->userModel->findById($_SESSION['user_id']);
+                if ($this->user) {
+                    error_log("loadUserFromSession: Utilisateur chargé avec succès");
+                    $this->permissions = $this->permissionModel->getUserPermissions($this->user->getId());
+                } else {
+                    error_log("loadUserFromSession: Utilisateur non trouvé en base de données");
+                    $this->logout();
+                }
+            } catch (\Exception $e) {
+                error_log("loadUserFromSession: Erreur lors du chargement de l'utilisateur - " . $e->getMessage());
+                error_log("loadUserFromSession: Trace - " . $e->getTraceAsString());
                 $this->logout();
             }
         } else {
@@ -44,23 +54,38 @@ class Auth
         }
     }
 
-    public function login(string $email, string $password): bool
+    public function login(string $login, string $password): bool
     {
-        $user = $this->userModel->findByEmail($email);
+        // Try by email first
+        $user = $this->userModel->findByEmail($login);
+        
+        // If not found, try by username
+        if (!$user) {
+            $user = $this->userModel->findByUsername($login);
+        }
         
         if (!$user) {
+            error_log("User not found with login: " . $login);
             return false;
         }
         
-        if (!$this->userModel->verifyPassword($password, $user->getPassword())) {
+        if (!password_verify($password, $user->getPassword())) {
+            error_log("Invalid password for user: " . $login);
             return false;
         }
         
         if (!$user->getIsActive()) {
+            error_log("User account is not active: " . $login);
             return false;
         }
         
         $_SESSION['user_id'] = $user->getId();
+        $_SESSION['username'] = $user->getUsername();
+        $_SESSION['role'] = $user->getRole();
+        
+        error_log("User successfully logged in: " . $login);
+        error_log("Session after login: " . print_r($_SESSION, true));
+        
         $this->user = $user;
         $this->permissions = $this->permissionModel->getUserPermissions($user->getId());
         
@@ -86,6 +111,18 @@ class Auth
         error_log("isLoggedIn: Statut de la session - " . session_status());
         error_log("isLoggedIn: Contenu de SESSION - " . print_r($_SESSION, true));
         error_log("isLoggedIn: user est " . ($this->user !== null ? "défini" : "null"));
+        
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        if (!isset($_SESSION['user_id'])) {
+            return false;
+        }
+        
+        if ($this->user === null) {
+            $this->loadUserFromSession();
+        }
         
         return $this->user !== null;
     }

@@ -103,7 +103,6 @@ class CsvValidationService
         $requiredFields = [
             'Numéro de badge',
             'Centrale',
-            'Lecteur',
             'Nature Evenement',
             'Nom',
             'Prénom'

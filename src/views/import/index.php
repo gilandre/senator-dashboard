@@ -2,126 +2,53 @@
 // Définir les variables de page
 $pageTitle = 'Importation de Données';
 $currentPage = 'import';
+$hideGlobalTopbar = false; // Activer la topbar globale standard
 
 // Commencer la capture du contenu
 ob_start();
 ?>
 
-<div class="container-fluid py-3">
-    <div class="row mb-3">
-        <div class="col">
-            <h1 class="h3 mb-0">Import de données</h1>
-        </div>
-        <div class="col text-end">
-            <button type="button" class="btn btn-outline-secondary me-2" id="toggleHistory">
-                <i class="fas fa-history"></i> Historique
+<div class="container-fluid">
+    <!-- En-tête de la page -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <!--<h1 class="h3 mb-0">Importation de données d'accès</h1>-->
+        <h1 class="h3 mb-0">&nbsp;</h1>
+        <div class="action-buttons">
+            <button id="showInfoBtn" class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#importInfoModal">
+                <i class="fas fa-info-circle"></i> Informations
             </button>
-            <button type="button" class="btn btn-outline-info me-2" id="toggleInstructions">
-                <i class="fas fa-info-circle"></i> Instructions
-            </button>
-            <a href="/dashboard" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Retour
+            <a href="/import/history" class="btn btn-primary">
+                <i class="fas fa-history"></i> Historique des importations
             </a>
         </div>
     </div>
-    
-    <!-- Historique des importations (masqué par défaut) -->
-    <div class="card mb-4 shadow-sm" id="historySection" style="display: none;">
-        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0">Historique des importations</h5>
-            <button type="button" class="btn-close" id="closeHistory" aria-label="Fermer"></button>
-        </div>
-        <div class="card-body p-0">
-            <!-- Formulaire de filtrage par date -->
-            <div class="bg-light p-3 border-bottom">
-                <form id="historyFilterForm" class="row g-3 align-items-end">
-                    <div class="col-md-4">
-                        <label for="start_date" class="form-label">Date de début</label>
-                        <input type="date" class="form-control" id="start_date" name="start_date" value="<?= date('Y-m-d', strtotime('-30 days')) ?>">
-                    </div>
-                    <div class="col-md-4">
-                        <label for="end_date" class="form-label">Date de fin</label>
-                        <input type="date" class="form-control" id="end_date" name="end_date" value="<?= date('Y-m-d') ?>">
-                    </div>
-                    <div class="col-md-4">
-                        <button type="submit" class="btn btn-primary w-100">
-                            <i class="fas fa-filter"></i> Filtrer
-                        </button>
-                    </div>
-                </form>
-            </div>
-            
-            <!-- Tableau d'historique -->
-            <div class="table-responsive">
-                <table class="table table-hover table-striped mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Date</th>
-                            <th>Fichier</th>
-                            <th>Utilisateur</th>
-                            <th>Total</th>
-                            <th>Importés</th>
-                            <th>Doublons</th>
-                            <th>Erreurs</th>
-                            <th>Taux</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyTableBody">
-                        <tr>
-                            <td colspan="8" class="text-center py-5">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">Chargement...</span>
-                                </div>
-                                <p class="mt-2">Chargement de l'historique...</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            
-            <!-- Pagination -->
-            <div class="d-flex justify-content-between align-items-center p-3 bg-light border-top" id="historyPagination">
-                <div class="text-muted small">
-                    <span id="pagination-info">Chargement...</span>
-                </div>
-                <div>
-                    <div class="btn-group" role="group">
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="prevPageBtn" disabled>
-                            <i class="fas fa-chevron-left"></i> Précédent
-                        </button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="nextPageBtn" disabled>
-                            Suivant <i class="fas fa-chevron-right"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
+
+    <!-- Zone de notification -->
+    <div id="notificationArea"></div>
+
+    <?php if (isset($_SESSION['flash'])): ?>
+    <div class="notification <?= $_SESSION['flash']['type'] ?>" id="flashNotification">
+        <span class="close-btn">&times;</span>
+        <?= $_SESSION['flash']['message'] ?>
     </div>
-    
+    <?php unset($_SESSION['flash']); ?>
+    <?php endif; ?>
+
     <?php if (isset($_SESSION['import_stats'])): ?>
     <!-- Résumé de la dernière importation -->
-    <div class="card mb-4 border-0 shadow-sm overflow-hidden" id="statsComponent">
-        <div class="card-header bg-gradient-success-to-primary text-white py-3">
-            <div class="d-flex align-items-center justify-content-between">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-check-circle me-3 fs-3"></i>
-                    <h5 class="mb-0 fw-bold">Importation réussie</h5>
-                </div>
-                <div>
-                    <button type="button" class="btn-close btn-close-white" aria-label="Fermer" id="hideStatsBtn" title="Masquer les statistiques"></button>
-                </div>
-            </div>
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="card-title">Résumé de l'importation</h5>
         </div>
         <div class="card-body p-0">
             <!-- Statistiques sommaires -->
             <div class="row g-0 border-bottom">
                 <?php 
-                // Pré-calculer les variables pour réduire l'utilisation de mémoire et optimiser l'affichage
                 $total = $_SESSION['import_stats']['total'];
                 $imported = $_SESSION['import_stats']['imported'];
                 $duplicates = $_SESSION['import_stats']['duplicates'];
                 $errors = $_SESSION['import_stats']['errors'];
-                $successRate = $total > 0 ? round(($imported / $total) * 100) : 0;
+                $successRate = $total > 0 ? round(100 * (($imported + $duplicates) / $total)) : 0;
                 $duplicateRate = $total > 0 ? round(($duplicates / $total) * 100) : 0;
                 $errorRate = $total > 0 ? round(($errors / $total) * 100) : 0;
                 ?>
@@ -175,747 +102,700 @@ ob_start();
             </div>
             
             <!-- Actions -->
-            <div class="d-flex justify-content-end p-3">
-                <form action="/import/finish" method="post" class="d-inline me-2">
-                    <button type="submit" class="btn btn-sm btn-outline-secondary">
-                        <i class="fas fa-broom me-1"></i> Effacer ce résumé
-                    </button>
-                </form>
-                
-                <button type="button" class="btn btn-sm btn-primary" id="toggleDetailsBtn">
-                    <i class="fas fa-chart-pie me-1"></i> Détails
-                </button>
-            </div>
-            
-            <!-- Détails (lazy loading) -->
-            <div class="collapse" id="importDetails">
-                <div class="border-top p-3 bg-light">
-                    <!-- Le contenu sera chargé via AJAX lors du clic -->
-                    <div id="detailsContent">
-                        <div class="text-center py-3">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Chargement...</span>
-                            </div>
-                            <p class="mt-2">Chargement des détails...</p>
-                        </div>
-                    </div>
+            <div class="d-flex justify-content-between p-3">
+                <div>
+                    <?php if ($duplicates > 0): ?>
+                    <a href="/import/download-duplicates?id=<?= $_SESSION['import_stats']['history_id'] ?? 0 ?>" class="btn btn-sm btn-warning me-2">
+                        <i class="fas fa-download me-1"></i> Télécharger les doublons
+                    </a>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <a href="/import/download-report?id=<?= $_SESSION['import_stats']['history_id'] ?? 0 ?>" class="btn btn-sm btn-info me-2">
+                        <i class="fas fa-file-download me-1"></i> Rapport
+                    </a>
+                    <form action="/import/finish" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-sm btn-secondary">
+                            <i class="fas fa-broom me-1"></i> Effacer ce résumé
+                        </button>
+                    </form>
                 </div>
             </div>
         </div>
     </div>
     <?php endif; ?>
 
-    <!-- Instructions (masquées par défaut) -->
-    <div class="card mb-3" id="instructionsCard" style="display: none;">
-        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-            <h5 class="card-title mb-0">Instructions d'import</h5>
-            <button type="button" class="btn-close" id="closeInstructions" aria-label="Fermer"></button>
+    <!-- Message de résultat d'upload -->
+    <div id="uploadResultAlert" class="alert alert-success alert-dismissible fade show" role="alert" style="display: none;">
+        <span id="uploadResultMessage">Fichier importé avec succès.</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+
+    <!-- Instructions 
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="card-title">Instructions d'import</h5>
         </div>
         <div class="card-body">
             <p>Le fichier CSV doit respecter le format suivant :</p>
             <ul>
-                <li>Utiliser le point-virgule (;) comme séparateur</li>
-                <li>La première ligne doit contenir les en-têtes des colonnes</li>
-                <li>Les colonnes requises sont :</li>
+                <li>Format CSV avec séparateur point-virgule (;)</li>
+                <li>Encodage UTF-8</li>
+                <li>La première ligne doit contenir les en-têtes</li>
+                <li>Colonnes requises : <strong>Numéro de badge</strong>, <strong>Date évènements</strong>, Heure évènements, Centrale, Nature Evenement, Nom, Prénom, Statut, Groupe</li>
             </ul>
-            <div class="table-responsive mb-3">
-                <table class="table table-sm table-bordered">
+            <p>Exemple de ligne valide :</p>
+            <pre class="bg-light p-2">563;17/09/2024;07:21:26;C 2  GUERITE;Sortie;KONATE;MAMADOU;OK;SERVICES INFORMATIQUE</pre>
+        </div>
+    <!-- Instructions 
+    </div>
+
+    <!-- Aperçu du CSV -->
+    <div class="card mb-4" id="csvPreviewCard" style="display: none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">Aperçu du fichier CSV</h5>
+            <button type="button" class="btn-close" aria-label="Close" id="closePreviewBtn"></button>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm table-striped table-hover mb-0" id="csvPreviewTable">
                     <thead class="table-light">
-                        <tr>
-                            <th>Colonne</th>
-                            <th>Description</th>
-                            <th>Format</th>
-                        </tr>
+                        <tr id="csvPreviewHeader"></tr>
                     </thead>
-                    <tbody>
-                        <tr>
-                            <td>Numéro de badge</td>
-                            <td>Identifiant unique de la personne</td>
-                            <td>Numérique</td>
-                        </tr>
-                        <tr>
-                            <td>Date évènements</td>
-                            <td>Date de l'événement</td>
-                            <td>JJ/MM/AAAA ou AAAA-MM-JJ</td>
-                        </tr>
-                        <tr>
-                            <td>Heure évènements</td>
-                            <td>Heure de l'événement</td>
-                            <td>HH:MM:SS</td>
-                        </tr>
-                        <tr>
-                            <td>Centrale</td>
-                            <td>Nom de l'unité centrale</td>
-                            <td>Texte</td>
-                        </tr>
-                        <tr>
-                            <td>Lecteur</td>
-                            <td>Identifiant du lecteur de badge</td>
-                            <td>Texte</td>
-                        </tr>
-                        <tr>
-                            <td>Nature Evenement</td>
-                            <td>Type d'événement</td>
-                            <td>Entrée, Sortie, etc.</td>
-                        </tr>
-                        <tr>
-                            <td>Nom</td>
-                            <td>Nom de famille</td>
-                            <td>Texte</td>
-                        </tr>
-                        <tr>
-                            <td>Prénom</td>
-                            <td>Prénom</td>
-                            <td>Texte</td>
-                        </tr>
-                    </tbody>
+                    <tbody id="csvPreviewBody"></tbody>
                 </table>
             </div>
-            <div class="alert alert-info py-2">
-                <i class="fas fa-info-circle"></i> Le système validera les données avant l'importation et vous permettra de corriger les erreurs détectées.
+        </div>
+        <div class="card-footer bg-light d-flex justify-content-between align-items-center">
+            <span class="text-muted small" id="csvRowCount">0 lignes détectées</span>
+            <div>
+                <button type="button" class="btn btn-sm btn-secondary" id="cancelImportBtn">
+                    <i class="fas fa-times me-1"></i> Annuler
+                </button>
+                <button type="button" class="btn btn-sm btn-primary" id="confirmImportBtn">
+                    <i class="fas fa-check me-1"></i> Confirmer l'importation
+                </button>
             </div>
         </div>
     </div>
 
-    <div class="row main-content">
-        <!-- Formulaire d'importation -->
-        <div class="col-lg-5 mb-3">
-            <div class="card mb-4 shadow-sm">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="card-title mb-0">Importer un fichier CSV</h5>
+    <!-- Formulaire d'importation -->
+    <div class="card" id="importFormCard">
+        <div class="card-header">
+            <h5 class="card-title">Importer un fichier CSV</h5>
+        </div>
+        <div class="card-body">
+            <!-- Aperçu rapide du fichier sélectionné 
+            <div class="card mb-3" id="quickPreviewCard" style="display: none;">
+                <div class="card-header bg-light">
+                    <h6 class="card-title mb-0">Aperçu du fichier</h6>
                 </div>
-                <div class="card-body">
-                    <form action="/import/upload" method="post" enctype="multipart/form-data" id="importForm">
-                        <div class="mb-3">
-                            <label for="csv_file" class="form-label">Fichier CSV</label>
-                            <input type="file" class="form-control" name="csv_file" id="csv_file" accept=".csv" required>
-                        </div>
-                        
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label for="separator" class="form-label">Séparateur</label>
-                                <select class="form-select" name="separator" id="separator">
-                                    <option value=";">Point-virgule (;)</option>
-                                    <option value=",">Virgule (,)</option>
-                                    <option value="\t">Tabulation</option>
-                                    <option value="|">Pipe (|)</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check mt-4">
-                                    <input class="form-check-input" type="checkbox" name="has_header" id="has_header" checked>
-                                    <label class="form-check-label" for="has_header">
-                                        Le fichier contient une ligne d'en-tête
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-4">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="validate_data" id="validate_data" checked>
-                                <label class="form-check-label" for="validate_data">
-                                    Valider les données avant l'importation
-                                </label>
-                                <small class="form-text text-muted d-block">
-                                    Vérifie les données et affiche un aperçu avant d'importer
-                                </small>
-                            </div>
-                        </div>
-                        
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary" id="importButton">
-                                <i class="fas fa-upload me-2"></i> Importer
-                            </button>
-                        </div>
-                    </form>
-                    
-                    <!-- Indicateur de progression (masqué par défaut) -->
-                    <div id="uploadProgress" class="mt-4" style="display: none;">
-                        <div class="progress mb-3">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%" id="progressBar"></div>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <p class="text-muted mb-0" id="progressMessage">Initialisation de l'importation...</p>
-                            <p class="text-muted mb-0" id="progressPercentage">0%</p>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover mb-0" style="font-size: 0.85rem;">
+                            <thead class="table-light">
+                                <tr id="quickPreviewHeader"></tr>
+                            </thead>
+                            <tbody id="quickPreviewBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="card-footer bg-light">
+                    <span class="text-muted small" id="quickPreviewInfo">0 lignes détectées</span>
+                </div>
+            </div>-->
+            
+            <form action="/import/upload" method="post" enctype="multipart/form-data" id="importForm">
+                <!-- Ajouter le jeton CSRF pour la sécurité -->
+                <input type="hidden" name="csrf_token" value="<?= $csrf_token ?? '' ?>">
+                
+                <div class="mb-3">
+                    <label for="csvFile" class="form-label">Fichier CSV</label>
+                    <input type="file" class="form-control" id="csvFile" name="csv_file" accept=".csv" required>
+                    <div class="form-text">Taille maximale: 20 Mo</div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="separator" class="form-label">Séparateur</label>
+                        <select class="form-select" id="separator" name="separator">
+                            <option value=";" selected>Point-virgule (;)</option>
+                            <option value=",">Virgule (,)</option>
+                            <option value="\t">Tabulation</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="form-check mt-4">
+                            <input type="checkbox" class="form-check-input" id="hasHeader" name="has_header" value="1" checked>
+                            <label class="form-check-label" for="hasHeader">Le fichier contient une ligne d'en-tête</label>
                         </div>
                     </div>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="skipDuplicates" name="skip_duplicates" value="1" checked>
+                    <label class="form-check-label" for="skipDuplicates">Ignorer les doublons</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="clearHashes" name="clear_hashes" value="1">
+                    <label class="form-check-label" for="clearHashes">Vider la table des hachages (réimporter les fichiers précédemment importés)</label>
+                    <div class="form-text text-muted">Cette option permet de réimporter des fichiers qui ont déjà été traités précédemment.</div>
+                </div>
+                <div class="mb-4">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="chunkProcessing" name="chunk_processing" value="1">
+                        <label class="form-check-label" for="chunkProcessing">Traitement par lots (recommandé pour les fichiers > 4000 lignes)</label>
+                    </div>
+                    <div class="form-text text-muted">Cette option permet de traiter les fichiers volumineux en plusieurs étapes pour éviter les dépassements de mémoire.</div>
+                </div>
+                
+                <!-- Barre de progression cachée par défaut -->
+                <div id="uploadProgressContainer" style="display: none;">
+                    <div class="progress mb-3" style="height: 8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="uploadProgressBar" role="progressbar" style="width: 0%" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div class="text-muted small" id="uploadProgressText">Préparation...</div>
+                        <div class="text-muted small" id="uploadProgressPercent">0%</div>
+                    </div>
+                    <div class="text-muted small mb-3" id="uploadProgressDetails">
+                        <span id="progressCurrentRows">0</span> lignes traitées sur <span id="progressTotalRows">0</span>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-sm btn-danger" id="cancelUploadBtn" style="display: none;">
+                            <i class="fas fa-times-circle me-1"></i> Annuler l'importation
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2 d-md-flex justify-content-md-end" id="importButtonsContainer">
+                    <button type="button" class="btn btn-secondary me-2" id="previewBtn">
+                        <i class="fas fa-eye me-1"></i> Prévisualiser
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn">
+                        <i class="fas fa-upload me-1"></i> Importer
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal d'informations sur l'importation -->
+<div class="modal fade" id="importInfoModal" tabindex="-1" aria-labelledby="importInfoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="importInfoModalLabel">Informations sur l'importation</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fermer"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-4">
+                    <h6 class="fw-bold">Format attendu</h6>
+                    <p>L'importation des données d'accès accepte les fichiers CSV avec les caractéristiques suivantes :</p>
+                    <ul>
+                        <li>Encodage UTF-8</li>
+                        <li>Séparateur point-virgule (;) par défaut (configurable)</li>
+                        <li>Première ligne d'en-tête (optionnelle)</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h6 class="fw-bold">Colonnes requises</h6>
+                    <p>Les colonnes suivantes sont obligatoires :</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Colonne</th>
+                                    <th>Description</th>
+                                    <th>Format attendu</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Numéro de badge</strong></td>
+                                    <td>Identifiant unique de l'employé</td>
+                                    <td>Numérique</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Date évènements</strong></td>
+                                    <td>Date de l'événement</td>
+                                    <td>JJ/MM/AAAA ou AAAA-MM-JJ</td>
+                                </tr>
+                                <tr>
+                                    <td>Heure évènements</td>
+                                    <td>Heure de l'événement</td>
+                                    <td>HH:MM:SS</td>
+                                </tr>
+                                <tr>
+                                    <td>Centrale</td>
+                                    <td>Lieu ou dispositif de pointage</td>
+                                    <td>Texte</td>
+                                </tr>
+                                <tr>
+                                    <td>Nature Evenement</td>
+                                    <td>Type d'événement (Entrée/Sortie)</td>
+                                    <td>Texte</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h6 class="fw-bold">Traitement des fichiers volumineux</h6>
+                    <p>Pour les fichiers contenant plus de 4000 lignes, nous recommandons d'activer l'option "Traitement par lots" qui permet :</p>
+                    <ul>
+                        <li>Une consommation réduite de mémoire</li>
+                        <li>Un suivi en temps réel de la progression</li>
+                        <li>La possibilité d'annuler l'opération</li>
+                    </ul>
+                </div>
+                
+                <div class="mb-4">
+                    <h6 class="fw-bold">Gestion des doublons</h6>
+                    <p>Le système détecte automatiquement les doublons basés sur la comparaison des lignes entières:</p>
+                    <ul>
+                        <li>Une ligne est considérée comme un doublon si elle est strictement identique à une autre ligne du fichier ou déjà présente en base de données</li>
+                        <li>Tous les champs sont pris en compte dans la comparaison (badge, date, heure, centrale, nom, prénom, etc.)</li>
+                        <li>La comparaison est insensible à la casse pour assurer la cohérence</li>
+                    </ul>
+                    <p>Les doublons peuvent être ignorés (option par défaut) ou téléchargés après l'importation.</p>
                 </div>
             </div>
-        </div>
-
-        <!-- Aperçu des données (élargi pour une meilleure visibilité) -->
-        <div class="col-lg-7 mb-3">
-            <div class="card h-100 shadow-sm">
-                <div class="card-header bg-success text-white">
-                    <h5 class="card-title mb-0"><i class="fas fa-table me-2"></i>Aperçu des données</h5>
-                </div>
-                <div class="card-body">
-                    <div id="previewContainer" class="table-responsive">
-                        <div class="text-center py-4">
-                            <i class="fas fa-file-csv fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">Sélectionnez un fichier pour voir l'aperçu</p>
-                        </div>
-                    </div>
-                </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Fermer</button>
             </div>
         </div>
     </div>
 </div>
 
-<style>
-    /* Ajustement de la hauteur pour les écrans de différentes tailles */
-    @media (min-height: 800px) {
-        .main-content {
-            min-height: calc(100vh - 350px);
-        }
-    }
-    
-    @media (min-height: 600px) and (max-height: 799px) {
-        .main-content {
-            min-height: calc(100vh - 300px);
-        }
-    }
-    
-    /* Ajout d'ombre légère aux cartes pour un meilleur effet visuel */
-    .card {
-        transition: all 0.2s ease-in-out;
-    }
-    
-    .card:hover {
-        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-    }
-</style>
+<!-- Notification d'importation asynchrone -->
+<div id="asyncNotification" class="toast position-fixed top-0 end-0 p-3 mt-5" style="z-index: 1100; display: none;" role="alert" aria-live="assertive" aria-atomic="true">
+    <div class="toast-header bg-info text-white">
+        <i class="fas fa-sync-alt me-2"></i>
+        <strong class="me-auto">Importation volumineuse</strong>
+        <small class="text-white-50 asyncTime">à l'instant</small>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast" aria-label="Fermer"></button>
+    </div>
+    <div class="toast-body">
+        <p class="asyncMessage mb-2">Une importation volumineuse est en cours de traitement.</p>
+        <div class="progress mb-2" style="height: 5px;">
+            <div class="progress-bar bg-info asyncProgressBar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="asyncProgressText small">0%</span>
+            <a href="/import/confirmation" class="btn btn-sm btn-primary asyncCheckLink">
+                <i class="fas fa-external-link-alt me-1"></i> Voir les détails
+            </a>
+        </div>
+    </div>
+</div>
 
-<script>
-document.getElementById('csv_file').addEventListener('change', function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+<script src="/assets/js/import.js"></script>
 
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const content = e.target.result;
-        const lines = content.split('\n');
-        const separator = document.getElementById('separator').value;
-        const hasHeader = document.getElementById('has_header').checked;
-
-        let html = '<table class="table table-striped table-hover table-bordered">';
-        
-        // En-têtes
-        if (hasHeader && lines.length > 0) {
-            html += '<thead class="table-light"><tr>';
-            const headers = lines[0].split(separator);
-            headers.forEach(header => {
-                html += `<th>${header.trim()}</th>`;
-            });
-            html += '</tr></thead>';
-        }
-
-        // Données
-        html += '<tbody>';
-        const startLine = hasHeader ? 1 : 0;
-        const maxLines = Math.min(lines.length, startLine + 5); // Afficher max 5 lignes
-        for (let i = startLine; i < maxLines; i++) {
-            if (!lines[i].trim()) continue;
-            html += '<tr>';
-            const cells = lines[i].split(separator);
-            cells.forEach(cell => {
-                html += `<td>${cell.trim()}</td>`;
-            });
-            html += '</tr>';
-        }
-        html += '</tbody></table>';
-        
-        if (lines.length > maxLines) {
-            html += `<div class="text-muted mt-2">Affichage des 5 premières lignes sur ${lines.length - (hasHeader ? 1 : 0)} lignes au total</div>`;
-        }
-
-        document.getElementById('previewContainer').innerHTML = html;
-    };
-    reader.readAsText(file);
-});
-
-document.getElementById('importForm').addEventListener('submit', function(e) {
-    const file = document.getElementById('csv_file').files[0];
-    if (!file) {
-        e.preventDefault();
-        alert('Veuillez sélectionner un fichier CSV à importer.');
-        return;
-    }
-    
-    if (file.size > 10 * 1024 * 1024) { // 10 MB
-        e.preventDefault();
-        alert('Le fichier est trop volumineux. Taille maximale : 10 MB');
-    }
-});
-
-// Gestion de l'affichage/masquage des instructions
-document.getElementById('toggleInstructions').addEventListener('click', function() {
-    const instructionsCard = document.getElementById('instructionsCard');
-    if (instructionsCard.style.display === 'none') {
-        instructionsCard.style.display = 'block';
-        this.innerHTML = '<i class="fas fa-times-circle"></i> Masquer les instructions';
-        this.classList.replace('btn-outline-info', 'btn-info');
-    } else {
-        instructionsCard.style.display = 'none';
-        this.innerHTML = '<i class="fas fa-info-circle"></i> Instructions';
-        this.classList.replace('btn-info', 'btn-outline-info');
-    }
-});
-
-document.getElementById('closeInstructions').addEventListener('click', function() {
-    document.getElementById('instructionsCard').style.display = 'none';
-    const toggleBtn = document.getElementById('toggleInstructions');
-    toggleBtn.innerHTML = '<i class="fas fa-info-circle"></i> Instructions';
-    toggleBtn.classList.replace('btn-info', 'btn-outline-info');
-});
-
-// Changer le format d'aperçu lorsque le séparateur change
-document.getElementById('separator').addEventListener('change', function() {
-    const fileInput = document.getElementById('csv_file');
-    if (fileInput.files.length > 0) {
-        const event = new Event('change');
-        fileInput.dispatchEvent(event);
-    }
-});
-</script>
-
-<!-- Script pour masquer les statistiques et charger les détails à la demande -->
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Gestion du bouton pour masquer les statistiques
-    const hideStatsBtn = document.getElementById('hideStatsBtn');
-    const statsComponent = document.getElementById('statsComponent');
+    const csvFileInput = document.getElementById('csvFile');
+    const previewBtn = document.getElementById('previewBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const importForm = document.getElementById('importForm');
+    const csvPreviewCard = document.getElementById('csvPreviewCard');
+    const importFormCard = document.getElementById('importFormCard');
+    const csvPreviewHeader = document.getElementById('csvPreviewHeader');
+    const csvPreviewBody = document.getElementById('csvPreviewBody');
+    const csvRowCount = document.getElementById('csvRowCount');
+    const closePreviewBtn = document.getElementById('closePreviewBtn');
+    const cancelImportBtn = document.getElementById('cancelImportBtn');
+    const confirmImportBtn = document.getElementById('confirmImportBtn');
+    const uploadProgressContainer = document.getElementById('uploadProgressContainer');
+    const importButtonsContainer = document.getElementById('importButtonsContainer');
+    const uploadProgressBar = document.getElementById('uploadProgressBar');
+    const uploadProgressText = document.getElementById('uploadProgressText');
+    const uploadProgressPercent = document.getElementById('uploadProgressPercent');
+    const progressCurrentRows = document.getElementById('progressCurrentRows');
+    const progressTotalRows = document.getElementById('progressTotalRows');
+    const cancelUploadBtn = document.getElementById('cancelUploadBtn');
+    const chunkProcessingCheckbox = document.getElementById('chunkProcessing');
+    const uploadResultAlert = document.getElementById('uploadResultAlert');
+    const uploadResultMessage = document.getElementById('uploadResultMessage');
     
-    // Auto-masquage après 2-3 minutes (entre 120000 et 180000 ms)
-    if (statsComponent) {
-        const autoHideDelay = Math.floor(Math.random() * (180000 - 120000 + 1)) + 120000;
-        const autoHideTimer = setTimeout(function() {
-            if (statsComponent && statsComponent.style.display !== 'none') {
-                statsComponent.style.display = 'none';
-            }
-        }, autoHideDelay);
-        
-        // Si l'utilisateur clique sur le bouton, annuler le timer
-        if (hideStatsBtn) {
-            hideStatsBtn.addEventListener('click', function() {
-                clearTimeout(autoHideTimer);
-                if (statsComponent) {
-                    statsComponent.style.display = 'none';
-                }
-            });
-        }
-    }
+    // Cache pour les données prévisualisées
+    let previewData = null;
+    let uploadInProgress = false;
     
-    // Gestion du bouton pour afficher/masquer les détails
-    const toggleDetailsBtn = document.getElementById('toggleDetailsBtn');
-    const importDetails = document.getElementById('importDetails');
-    const detailsContent = document.getElementById('detailsContent');
+    // Fermer la prévisualisation et revenir au formulaire
+    closePreviewBtn.addEventListener('click', function() {
+        csvPreviewCard.style.display = 'none';
+        importFormCard.style.display = 'block';
+    });
     
-    if (toggleDetailsBtn && importDetails) {
-        toggleDetailsBtn.addEventListener('click', function() {
-            const isCollapsed = !importDetails.classList.contains('show');
-            
-            if (isCollapsed) {
-                // Afficher le collapse
-                importDetails.classList.add('show');
-                
-                // Charger les détails si ce n'est pas déjà fait
-                if (!detailsContent.getAttribute('data-loaded')) {
-                    // Contenu HTML des détails
-                    let details = `
-                    <h6 class="text-muted mb-3"><i class="fas fa-info-circle me-2"></i>Détails de l'importation</h6>
-                    
-                    <!-- Statistiques détaillées -->
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="bg-white rounded p-3 h-100 shadow-sm">
-                                <h6 class="text-muted mb-2">Répartition</h6>
-                                <div class="d-flex flex-column">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span><i class="fas fa-check text-success me-2"></i>Importées</span>
-                                        <span class="badge bg-light text-success">${<?= $imported ?>} (${<?= $successRate ?>}%)</span>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <span><i class="fas fa-copy text-warning me-2"></i>Doublons</span>
-                                        <span class="badge bg-light text-warning">${<?= $duplicates ?>} (${<?= $duplicateRate ?>}%)</span>
-                                    </div>
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span><i class="fas fa-exclamation-triangle text-danger me-2"></i>Erreurs</span>
-                                        <span class="badge bg-light text-danger">${<?= $errors ?>} (${<?= $errorRate ?>}%)</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="bg-white rounded p-3 h-100 shadow-sm">
-                                <h6 class="text-muted mb-2">Informations</h6>
-                                <ul class="list-unstyled mb-0">
-                                    <li class="mb-2"><i class="far fa-calendar-alt me-2 text-primary"></i>Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}</li>
-                                    <li class="mb-2"><i class="far fa-clock me-2 text-primary"></i>Durée: <span class="badge bg-light text-primary">N/A</span></li>
-                                    <li><i class="fas fa-server me-2 text-primary"></i>Base: <span class="badge bg-light text-primary">SQLite</span></li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Graphique -->
-                    <div class="bg-white rounded p-3 mt-3 shadow-sm">
-                        <div class="import-chart" style="height: 150px;">
-                            <canvas id="importChart"></canvas>
-                        </div>
-                    </div>
-                    `;
-                    
-                    // Mettre à jour le contenu
-                    detailsContent.innerHTML = details;
-                    detailsContent.setAttribute('data-loaded', 'true');
-                    
-                    // Initialiser le graphique
-                    const ctx = document.getElementById('importChart').getContext('2d');
-                    if (ctx) {
-                        // Données
-                        const importData = {
-                            labels: ['Importées', 'Doublons', 'Erreurs'],
-                            datasets: [{
-                                data: [
-                                    <?= $imported ?>, 
-                                    <?= $duplicates ?>, 
-                                    <?= $errors ?>
-                                ],
-                                backgroundColor: [
-                                    'rgba(40, 167, 69, 0.7)',
-                                    'rgba(255, 193, 7, 0.7)',
-                                    'rgba(220, 53, 69, 0.7)'
-                                ],
-                                borderColor: [
-                                    'rgb(40, 167, 69)',
-                                    'rgb(255, 193, 7)',
-                                    'rgb(220, 53, 69)'
-                                ],
-                                borderWidth: 1
-                            }]
-                        };
-                        
-                        // Créer le graphique
-                        new Chart(ctx, {
-                            type: 'doughnut',
-                            data: importData,
-                            options: {
-                                responsive: true,
-                                maintainAspectRatio: false,
-                                plugins: {
-                                    legend: {
-                                        position: 'bottom'
-                                    }
-                                }
-                            }
-                        });
-                    }
-                }
-            } else {
-                // Masquer le collapse
-                importDetails.classList.remove('show');
-            }
-        });
-    }
-});
-</script>
-
-<!-- Script pour gérer l'affichage de l'historique -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const toggleHistoryBtn = document.getElementById('toggleHistory');
-    const historySection = document.getElementById('historySection');
-    const closeHistoryBtn = document.getElementById('closeHistory');
-    const historyFilterForm = document.getElementById('historyFilterForm');
-    const historyTableBody = document.getElementById('historyTableBody');
-    const prevPageBtn = document.getElementById('prevPageBtn');
-    const nextPageBtn = document.getElementById('nextPageBtn');
-    const paginationInfo = document.getElementById('pagination-info');
+    cancelImportBtn.addEventListener('click', function() {
+        csvPreviewCard.style.display = 'none';
+        importFormCard.style.display = 'block';
+    });
     
-    // État de l'historique
-    const historyState = {
-        page: 1,
-        limit: 10,
-        startDate: document.getElementById('start_date').value,
-        endDate: document.getElementById('end_date').value,
-        totalPages: 1
-    };
-    
-    // Fonction pour charger l'historique depuis l'API
-    function loadHistory() {
-        // Afficher le spinner
-        historyTableBody.innerHTML = `
-        <tr>
-            <td colspan="8" class="text-center py-5">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Chargement...</span>
-                </div>
-                <p class="mt-2">Chargement de l'historique...</p>
-            </td>
-        </tr>
-        `;
-        
-        // Désactiver les boutons de pagination pendant le chargement
-        prevPageBtn.disabled = true;
-        nextPageBtn.disabled = true;
-        
-        // Construire l'URL de l'API avec les paramètres
-        const apiUrl = `/import/get-history?page=${historyState.page}&limit=${historyState.limit}&start_date=${historyState.startDate}&end_date=${historyState.endDate}`;
-        
-        // Effectuer la requête AJAX
-        fetch(apiUrl)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Erreur réseau: ' + response.status);
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    // Mettre à jour l'état
-                    historyState.totalPages = data.pagination.last_page;
-                    
-                    // Mettre à jour la pagination
-                    updatePagination(data.pagination);
-                    
-                    // Afficher les données
-                    displayHistoryData(data.data);
-                } else {
-                    throw new Error(data.error || 'Erreur lors du chargement des données');
-                }
-            })
-            .catch(error => {
-                console.error('Erreur:', error);
-                // Afficher le message d'erreur
-                historyTableBody.innerHTML = `
-                <tr>
-                    <td colspan="8" class="text-center py-5">
-                        <div class="text-danger">
-                            <i class="fas fa-exclamation-circle me-2"></i>
-                            ${error.message}
-                        </div>
-                        <button class="btn btn-sm btn-outline-secondary mt-3" onclick="loadHistory()">
-                            <i class="fas fa-sync-alt me-1"></i> Réessayer
-                        </button>
-                    </td>
-                </tr>
-                `;
-            });
-    }
-    
-    // Fonction pour afficher les données d'historique
-    function displayHistoryData(historyData) {
-        if (!historyData || historyData.length === 0) {
-            historyTableBody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center py-5">
-                    <div class="text-muted">
-                        <i class="fas fa-info-circle me-2"></i>
-                        Aucun historique d'importation disponible pour cette période.
-                    </div>
-                </td>
-            </tr>
-            `;
+    // Gérer le bouton de prévisualisation
+    previewBtn.addEventListener('click', function() {
+        if (!csvFileInput.files || csvFileInput.files.length === 0) {
+            alert('Veuillez sélectionner un fichier CSV à importer.');
             return;
         }
         
-        let html = '';
+        const file = csvFileInput.files[0];
+        const separator = document.getElementById('separator').value;
+        const hasHeader = document.getElementById('hasHeader').checked;
         
-        // Parcourir les données et générer les lignes du tableau
-        historyData.forEach(entry => {
-            // Formater la date
-            const date = new Date(entry.import_date);
-            const formattedDate = new Intl.DateTimeFormat('fr-FR', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-            }).format(date);
+        // Afficher l'indicateur de chargement
+        uploadProgressContainer.style.display = 'block';
+        importButtonsContainer.style.display = 'none';
+        uploadProgressText.textContent = 'Analyse du fichier en cours...';
+        
+        // Créer un FormData pour envoyer le fichier
+        const formData = new FormData();
+        formData.append('csv_file', file);
+        formData.append('separator', separator);
+        if (hasHeader) formData.append('has_header', '1');
+        
+        // Nous n'ajoutons plus le jeton CSRF car il est désactivé côté serveur pour la prévisualisation
+        
+        // Envoyer la requête au serveur
+        fetch('/import/preview', {
+            method: 'POST',
+            body: formData,
+            // Ne pas définir Content-Type car FormData le définit automatiquement avec la boundary
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+            },
+            credentials: 'same-origin' // S'assurer que les cookies sont envoyés
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`Erreur réseau: ${response.status} ${response.statusText}`);
+            }
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('Réponse non JSON reçue du serveur');
+            }
+            return response.json();
+        })
+        .then(data => {
+            // Masquer l'indicateur de chargement
+            uploadProgressContainer.style.display = 'none';
+            importButtonsContainer.style.display = 'flex';
             
-            // Calculer le taux de réussite
-            const successRate = entry.success_rate || 0;
+            console.log('Réponse du serveur:', data); // Déboguer la réponse
             
-            html += `
-            <tr>
-                <td>${formattedDate}</td>
-                <td class="text-truncate" style="max-width: 200px;" title="${entry.filename}">
-                    <i class="fas fa-file-csv me-1 text-primary"></i>
-                    ${entry.filename}
-                </td>
-                <td>${entry.username || 'Système'}</td>
-                <td class="text-center">${entry.total_records}</td>
-                <td class="text-center text-success">${entry.imported_records}</td>
-                <td class="text-center text-warning">${entry.duplicate_records}</td>
-                <td class="text-center text-danger">${entry.error_records}</td>
-                <td class="text-center">
-                    <div class="progress" style="height: 6px; width: 80px;">
-                        <div class="progress-bar bg-${successRate > 90 ? 'success' : (successRate > 70 ? 'warning' : 'danger')}" 
-                             style="width: ${successRate}%" 
-                             title="${successRate}%">
-                        </div>
-                    </div>
-                    <span class="small">${successRate}%</span>
-                </td>
-            </tr>
-            `;
+            if (data.success) {
+                // Afficher l'aperçu
+                displayServerPreview(data.data);
+            } else {
+                // Afficher l'erreur
+                const errorMessage = data.error || 'Erreur inconnue lors de l\'analyse du fichier';
+                console.error('Erreur de prévisualisation:', errorMessage);
+                alert('Erreur lors de l\'analyse du fichier: ' + errorMessage);
+            }
+        })
+        .catch(error => {
+            console.error('Erreur lors de la prévisualisation:', error);
+            
+            // Masquer l'indicateur de chargement et rétablir les boutons
+            uploadProgressContainer.style.display = 'none';
+            importButtonsContainer.style.display = 'flex';
+            
+            // Créer un message d'erreur précis basé sur le type d'erreur
+            let errorMessage = 'Erreur lors de la communication avec le serveur: ';
+            
+            if (error.name === 'SyntaxError') {
+                errorMessage += 'Réponse invalide du serveur (erreur de syntaxe JSON)';
+            } else if (error.message && error.message.includes('JSON')) {
+                errorMessage += 'Format de réponse incorrect';
+            } else if (error.name === 'TypeError') {
+                errorMessage += 'Problème de connexion au serveur';
+            } else if (error.message) {
+                errorMessage += error.message;
+            } else {
+                errorMessage += 'Erreur inconnue';
+            }
+            
+            alert(errorMessage);
+        });
+    });
+    
+    // Afficher l'aperçu à partir des données du serveur
+    function displayServerPreview(data) {
+        // Vider les conteneurs existants
+        csvPreviewHeader.innerHTML = '';
+        csvPreviewBody.innerHTML = '';
+        
+        // Vérifier si nous avons des données
+        if (!data || !data.headers || !data.rows) {
+            alert('Pas de données disponibles pour l\'aperçu');
+            return;
+        }
+        
+        // Mettre à jour le décompte des lignes
+        csvRowCount.textContent = `${data.totalRows} lignes détectées`;
+        
+        // Créer la ligne d'en-tête
+        data.headers.forEach(header => {
+            const th = document.createElement('th');
+            th.textContent = header;
+            csvPreviewHeader.appendChild(th);
         });
         
-        historyTableBody.innerHTML = html;
-    }
-    
-    // Fonction pour mettre à jour la pagination
-    function updatePagination(pagination) {
-        // Mettre à jour l'information de pagination
-        paginationInfo.textContent = `Affichage ${pagination.from} à ${pagination.to} sur ${pagination.total} entrées`;
+        // Créer les lignes de données
+        data.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            
+            row.forEach(cell => {
+                const td = document.createElement('td');
+                td.textContent = cell;
+                tr.appendChild(td);
+            });
+            
+            csvPreviewBody.appendChild(tr);
+        });
         
-        // Mettre à jour les boutons de pagination
-        prevPageBtn.disabled = pagination.current_page <= 1;
-        nextPageBtn.disabled = pagination.current_page >= pagination.last_page;
+        // Afficher la carte de prévisualisation et masquer le formulaire
+        csvPreviewCard.style.display = 'block';
+        importFormCard.style.display = 'none';
     }
     
-    // Gestion des événements de pagination
-    prevPageBtn.addEventListener('click', function() {
-        if (historyState.page > 1) {
-            historyState.page--;
-            loadHistory();
+    // Gestion du formulaire d'import
+    importForm.addEventListener('submit', function(e) {
+        if (!csvFileInput.files || csvFileInput.files.length === 0) {
+            alert('Veuillez sélectionner un fichier CSV à importer.');
+            e.preventDefault();
+            return;
+        }
+        
+        if (uploadInProgress) {
+            e.preventDefault();
+            return;
+        }
+        
+        // Vérifier que le jeton CSRF est présent
+        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+        if (!csrfToken) {
+            alert('Erreur de sécurité: jeton manquant. Veuillez actualiser la page et réessayer.');
+            e.preventDefault();
+            return;
+        }
+        
+        // Si le traitement par lots est activé pour les fichiers volumineux
+        const useChunks = chunkProcessingCheckbox.checked;
+        
+        if (useChunks) {
+            e.preventDefault();
+            uploadInProgress = true;
+            startChunkedUpload();
+        } else {
+            // Montrer la barre de progression simple pour l'upload standard
+            uploadProgressContainer.style.display = 'block';
+            importButtonsContainer.style.display = 'none';
+            uploadProgressText.textContent = 'Téléchargement du fichier...';
         }
     });
     
-    nextPageBtn.addEventListener('click', function() {
-        if (historyState.page < historyState.totalPages) {
-            historyState.page++;
-            loadHistory();
-        }
-    });
+    // Fonction pour démarrer un upload par lots
+    function startChunkedUpload() {
+        const file = csvFileInput.files[0];
+        const separator = document.getElementById('separator').value;
+        const hasHeader = document.getElementById('hasHeader').checked;
+        const skipDuplicates = document.getElementById('skipDuplicates').checked;
+        
+        // Afficher la barre de progression
+        uploadProgressContainer.style.display = 'block';
+        importButtonsContainer.style.display = 'none';
+        cancelUploadBtn.style.display = 'block';
+        
+        // Lire le fichier pour compter les lignes
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            const content = e.target.result;
+            // Compter les lignes (pour estimer la progression)
+            const lines = content.split(/\r\n|\n/).filter(line => line.trim().length > 0);
+            const totalRows = hasHeader ? lines.length - 1 : lines.length;
+            
+            // Mettre à jour l'affichage de la progression
+            progressTotalRows.textContent = totalRows;
+            
+            // Simuler la progression en lots (à remplacer par le vrai traitement par lots)
+            uploadFileInChunks(file, separator, hasHeader, skipDuplicates, totalRows);
+        };
+        
+        reader.onerror = function() {
+            alert('Erreur lors de la lecture du fichier');
+            resetUploadForm();
+        };
+        
+        reader.readAsText(file);
+    }
     
-    // Bouton pour afficher/masquer l'historique
-    if (toggleHistoryBtn) {
-        toggleHistoryBtn.addEventListener('click', function() {
-            if (historySection.style.display === 'none') {
-                historySection.style.display = 'block';
-                // Charger l'historique avec les valeurs actuelles
-                loadHistory();
-            } else {
-                historySection.style.display = 'none';
+    // Fonction qui simule le téléchargement par lots
+    function uploadFileInChunks(file, separator, hasHeader, skipDuplicates, totalRows) {
+        const formData = new FormData();
+        formData.append('csv_file', file);
+        formData.append('separator', separator);
+        if (hasHeader) formData.append('has_header', '1');
+        if (skipDuplicates) formData.append('skip_duplicates', '1');
+        formData.append('chunk_processing', '1');
+        
+        // Ajouter le jeton CSRF pour sécuriser la requête AJAX
+        const csrfToken = document.querySelector('input[name="csrf_token"]').value;
+        formData.append('csrf_token', csrfToken);
+        
+        // Faire une requête AJAX
+        const xhr = new XMLHttpRequest();
+        let processedRows = 0;
+        
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                
+                // Mettre à jour la barre de progression du téléchargement
+                uploadProgressBar.style.width = percentComplete + '%';
+                uploadProgressBar.setAttribute('aria-valuenow', percentComplete);
+                uploadProgressPercent.textContent = percentComplete + '%';
+                
+                if (percentComplete < 100) {
+                    uploadProgressText.textContent = 'Téléchargement du fichier...';
+                } else {
+                    uploadProgressText.textContent = 'Traitement des données...';
+                }
             }
         });
-    }
-    
-    // Bouton pour fermer l'historique
-    if (closeHistoryBtn) {
-        closeHistoryBtn.addEventListener('click', function() {
-            historySection.style.display = 'none';
-        });
-    }
-    
-    // Formulaire de filtrage
-    if (historyFilterForm) {
-        historyFilterForm.addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            // Mettre à jour les filtres
-            historyState.startDate = document.getElementById('start_date').value;
-            historyState.endDate = document.getElementById('end_date').value;
-            historyState.page = 1; // Réinitialiser à la première page
-            
-            // Charger l'historique avec les nouvelles valeurs
-            loadHistory();
-        });
-    }
-});
-</script>
-
-<!-- Script pour gérer la barre de progression -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const importForm = document.getElementById('importForm');
-    const importButton = document.getElementById('importButton');
-    const fileInput = document.getElementById('csv_file');
-    const uploadProgress = document.getElementById('uploadProgress');
-    const progressBar = document.getElementById('progressBar');
-    const progressMessage = document.getElementById('progressMessage');
-    const progressPercentage = document.getElementById('progressPercentage');
-    
-    // Fonction pour vérifier et mettre à jour la progression
-    function checkProgress() {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', '/import/process?check_progress=1', true);
-        xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
         
-        xhr.onload = function() {
-            if (xhr.status === 200) {
+        xhr.addEventListener('load', function(e) {
+            if (xhr.status >= 200 && xhr.status < 300) {
                 try {
                     const response = JSON.parse(xhr.responseText);
                     
-                    // Mettre à jour la barre de progression
-                    const progress = response.progress || 0;
-                    progressBar.style.width = progress + '%';
-                    progressPercentage.textContent = progress + '%';
+                    // Si le serveur répond avec succès
+                    uploadProgressBar.style.width = '100%';
+                    uploadProgressBar.setAttribute('aria-valuenow', 100);
+                    uploadProgressPercent.textContent = '100%';
+                    progressCurrentRows.textContent = totalRows;
+                    uploadProgressText.textContent = 'Import terminé avec succès!';
                     
-                    // Mettre à jour le message
-                    if (response.message) {
-                        progressMessage.textContent = response.message;
-                    }
-                    
-                    // Si le traitement est terminé
-                    if (response.status === 'completed') {
-                        progressBar.classList.remove('progress-bar-animated');
-                        progressBar.classList.add('bg-success');
+                    // Cacher la barre de progression après un délai
+                    setTimeout(function() {
+                        uploadProgressContainer.style.display = 'none';
+                        importButtonsContainer.style.display = 'flex';
+                        resetUploadForm();
                         
-                        // Rediriger vers la page de validation si des statistiques sont disponibles
-                        if (response.stats) {
-                            setTimeout(function() {
-                                window.location.href = '/import/validate';
-                            }, 1000);
+                        // Afficher le message de résultat
+                        uploadResultAlert.className = 'alert alert-success alert-dismissible fade show';
+                        uploadResultMessage.textContent = `Import terminé avec succès! ${response.stats.inserted} enregistrements importés, ${response.stats.skipped} doublons ignorés.`;
+                        uploadResultAlert.style.display = 'block';
+                        
+                        // Recharger la page si nécessaire pour afficher les résultats
+                        if (response.redirect) {
+                            window.location.href = response.redirect;
                         }
-                    } else if (response.status === 'error') {
-                        progressBar.classList.remove('progress-bar-animated');
-                        progressBar.classList.add('bg-danger');
-                    } else {
-                        // Continuer à vérifier la progression si le traitement n'est pas terminé
-                        setTimeout(checkProgress, 1000);
-                    }
+                    }, 1500);
                 } catch (error) {
-                    console.error('Erreur de parsing JSON:', error);
+                    handleUploadError('Erreur de traitement de la réponse du serveur.');
                 }
+            } else {
+                handleUploadError('Erreur lors du téléchargement: ' + xhr.statusText);
             }
-        };
+        });
         
-        xhr.onerror = function() {
-            console.error('Erreur de connexion');
-        };
+        xhr.addEventListener('error', function() {
+            handleUploadError('Erreur de connexion au serveur.');
+        });
         
-        xhr.send();
+        xhr.addEventListener('abort', function() {
+            handleUploadError('Le téléchargement a été annulé.');
+        });
+        
+        // Simuler les mises à jour périodiques de progression
+        const progressInterval = setInterval(function() {
+            // Cette partie serait idéalement mise à jour par le serveur avec la progression réelle
+            processedRows += Math.floor(totalRows * 0.05);
+            if (processedRows > totalRows) processedRows = totalRows;
+            
+            progressCurrentRows.textContent = processedRows;
+            const percentComplete = Math.round((processedRows / totalRows) * 100);
+            
+            // Après le téléchargement initial, mettre à jour la progression du traitement
+            if (percentComplete > 0) {
+                uploadProgressBar.style.width = percentComplete + '%';
+                uploadProgressBar.setAttribute('aria-valuenow', percentComplete);
+                uploadProgressPercent.textContent = percentComplete + '%';
+                uploadProgressText.textContent = 'Traitement des données...';
+            }
+            
+            if (processedRows >= totalRows) {
+                clearInterval(progressInterval);
+            }
+        }, 1000);
+        
+        // Annulation de l'upload
+        cancelUploadBtn.addEventListener('click', function() {
+            xhr.abort();
+            clearInterval(progressInterval);
+            resetUploadForm();
+            alert('L\'importation a été annulée.');
+        });
+        
+        // Envoyer la requête
+        xhr.open('POST', '/import/upload', true);
+        xhr.send(formData);
     }
     
-    // Gestion de la soumission du formulaire
-    importForm.addEventListener('submit', function(e) {
-        // Vérifier qu'un fichier a été sélectionné
-        if (!fileInput.files.length) {
-            return true; // Permettre la soumission normale
-        }
+    // Gérer les erreurs d'upload
+    function handleUploadError(message) {
+        uploadResultAlert.className = 'alert alert-danger alert-dismissible fade show';
+        uploadResultMessage.textContent = message;
+        uploadResultAlert.style.display = 'block';
+        resetUploadForm();
+    }
+    
+    // Réinitialiser le formulaire d'upload
+    function resetUploadForm() {
+        uploadInProgress = false;
+        uploadProgressContainer.style.display = 'none';
+        importButtonsContainer.style.display = 'flex';
+        cancelUploadBtn.style.display = 'none';
+        uploadProgressBar.style.width = '0%';
+        uploadProgressBar.setAttribute('aria-valuenow', 0);
+        uploadProgressPercent.textContent = '0%';
+        uploadProgressText.textContent = 'Préparation...';
+        progressCurrentRows.textContent = '0';
+        progressTotalRows.textContent = '0';
+    }
+
+    // Ajouter la gestion du clic sur le bouton de confirmation d'importation
+    confirmImportBtn.addEventListener('click', function() {
+        // Soumettre le formulaire d'importation
+        const hiddenCsrfInput = document.createElement('input');
+        hiddenCsrfInput.type = 'hidden';
+        hiddenCsrfInput.name = 'csrf_token';
+        hiddenCsrfInput.value = document.querySelector('input[name="csrf_token"]').value;
         
-        // Afficher la barre de progression
-        importButton.disabled = true;
-        importButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Importation en cours...';
-        uploadProgress.style.display = 'block';
+        const hiddenAction = document.createElement('input');
+        hiddenAction.type = 'hidden';
+        hiddenAction.name = 'action';
+        hiddenAction.value = 'process';
         
-        // Pour les fichiers volumineux, commencer à vérifier la progression
-        setTimeout(checkProgress, 1000);
+        // Ajouter les champs cachés au formulaire
+        importForm.appendChild(hiddenCsrfInput);
+        importForm.appendChild(hiddenAction);
         
-        // Permettre au formulaire de se soumettre normalement
-        return true;
+        // Soumettre le formulaire
+        importForm.submit();
     });
 });
 </script>
 
 <?php
-// Récupérer le contenu généré
+// Fin de la capture du contenu
 $content = ob_get_clean();
 
-// Inclure le layout avec le contenu
-require_once __DIR__ . '/../layouts/app.php';
+// Inclure le layout principal
+include __DIR__ . '/../layouts/main.php';
 ?> 

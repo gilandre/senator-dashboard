@@ -66,7 +66,7 @@ class DashboardService
                     SUM(CASE WHEN event_type = 'Utilisateur inconnu' THEN 1 ELSE 0 END) as failed_entries,
                     COUNT(DISTINCT CASE WHEN event_type = 'Utilisateur accepté' THEN badge_number ELSE NULL END) as unique_entries,
                     SUM(CASE WHEN event_type = 'Utilisateur accepté' THEN 1 ELSE 0 END) as validated_entries
-                FROM access_logs
+                FROM access_logs 
                 WHERE event_date = :date
             ";
             
@@ -120,7 +120,7 @@ class DashboardService
                     event_date,
                     COUNT(DISTINCT badge_number) as daily_people,
                     COUNT(*) as daily_entries
-                FROM access_logs
+                FROM access_logs 
                 WHERE event_date BETWEEN :start_date AND :end_date
                 GROUP BY event_date
                 ORDER BY event_date
@@ -152,11 +152,11 @@ class DashboardService
         try {
             $query = "
                 SELECT 
-                    location,
+                    central as location,
                     COUNT(*) as entry_count
-                FROM access_logs
+                FROM access_logs 
                 WHERE event_date = :date
-                GROUP BY location
+                GROUP BY central
                 ORDER BY entry_count DESC
             ";
             
@@ -183,14 +183,14 @@ class DashboardService
         try {
             $query = "
                 SELECT 
-                    user_group as action_type,
+                    group_name as action_type,
                     COUNT(DISTINCT badge_number) as user_count,
                     COUNT(*) as action_count
-                FROM access_logs
+                FROM access_logs 
                 WHERE event_date = :date
                   AND event_type = 'Utilisateur accepté'
-                  AND user_group IS NOT NULL
-                GROUP BY user_group
+                  AND group_name IS NOT NULL
+                GROUP BY group_name
             ";
             
             $stmt = $this->db->prepare($query);
@@ -774,7 +774,7 @@ class DashboardService
                     badge_number,
                     MIN(event_time) as first_entry,
                     MAX(event_time) as last_entry
-                FROM access_logs
+                FROM access_logs 
                 WHERE event_date = :date
                 AND event_type = 'Utilisateur accepté'
                 GROUP BY badge_number

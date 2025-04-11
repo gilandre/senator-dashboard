@@ -229,7 +229,7 @@ class AuthService
                 $stmt = $this->db->prepare("
                     UPDATE users
                     SET failed_attempts = failed_attempts + 1,
-                        last_failed_attempt = datetime('now')
+                        last_failed_attempt = NOW()
                     WHERE id = :user_id
                 ");
                 $stmt->execute(['user_id' => $userId]);

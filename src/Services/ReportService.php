@@ -57,7 +57,7 @@ class ReportService
                 GROUP BY badge_number, first_name, last_name, group_name, status
                 ORDER BY status, group_name, last_name, first_name";
 
-        return $this->database->query($sql, $params)->fetchAll();
+        return $this->database->fetchAll($sql, $params);
     }
 
     public function generateLocationReport(string $date): array
@@ -72,13 +72,13 @@ class ReportService
                 GROUP BY central
                 ORDER BY total_entries DESC";
 
-        return $this->database->query($sql, [$date])->fetchAll();
+        return $this->database->fetchAll($sql, [$date]);
     }
 
     public function getAvailableStatuses(): array
     {
         $sql = "SELECT DISTINCT status FROM access_logs WHERE status IS NOT NULL ORDER BY status";
-        return array_column($this->database->query($sql)->fetchAll(), 'status');
+        return array_column($this->database->fetchAll($sql), 'status');
     }
 
     public function getStatusStatistics(string $startDate, string $endDate): array
@@ -102,12 +102,12 @@ class ReportService
             COUNT(DISTINCT daily_people) as total_people,
             SUM(daily_entries) as total_entries,
             SUM(daily_rejected) as total_rejected,
-            AVG(TIMESTAMPDIFF(SECOND, first_entry, last_entry)) / 3600 as avg_duration_hours
+            COALESCE(AVG(TIMESTAMPDIFF(SECOND, first_entry, last_entry)) / 3600, 0) as avg_duration_hours
         FROM daily_stats
         GROUP BY status
         ORDER BY status";
 
-        return $this->database->query($sql, [$startDate, $endDate])->fetchAll();
+        return $this->database->fetchAll($sql, [$startDate, $endDate]);
     }
 
     public function getStatusAttendanceByDay(string $startDate, string $endDate): array
@@ -123,22 +123,23 @@ class ReportService
                 GROUP BY event_date, status
                 ORDER BY event_date, status";
 
-        return $this->database->query($sql, [$startDate, $endDate])->fetchAll();
+        return $this->database->fetchAll($sql, [$startDate, $endDate]);
     }
 
     public function getStatusPeakHours(string $startDate, string $endDate): array
     {
         $sql = "SELECT 
-                    status,
                     HOUR(event_time) as hour,
+                    status,
+                    COUNT(DISTINCT badge_number) as total_people,
                     COUNT(CASE WHEN event_type = 'Utilisateur accepté' THEN 1 END) as total_entries
                 FROM access_logs 
                 WHERE event_date BETWEEN ? AND ?
                 AND status IS NOT NULL
-                GROUP BY status, HOUR(event_time)
-                ORDER BY status, hour";
+                GROUP BY HOUR(event_time), status
+                ORDER BY hour, status";
 
-        return $this->database->query($sql, [$startDate, $endDate])->fetchAll();
+        return $this->database->fetchAll($sql, [$startDate, $endDate]);
     }
 
     /**
@@ -186,7 +187,7 @@ class ReportService
                     first_entry,
                     last_exit,
                     duration,
-                    TIME_TO_SEC(duration) / 3600 as hours_worked,
+                    COALESCE(TIME_TO_SEC(duration) / 3600, 0) as hours_worked,
                     CASE
                         WHEN TIME_TO_SEC(duration) / 3600 < 4 THEN '< 4h'
                         WHEN TIME_TO_SEC(duration) / 3600 < 6 THEN '4-6h'
@@ -201,7 +202,7 @@ class ReportService
                 FROM daily_entries
                 ORDER BY event_date, group_name, last_name, first_name";
 
-        return $this->database->query($sql, $params)->fetchAll();
+        return $this->database->fetchAll($sql, $params);
     }
 
     public function generateExcelReport(array $data, string $type): string

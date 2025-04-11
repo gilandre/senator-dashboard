@@ -7,6 +7,8 @@ $hideGlobalTopbar = true; // Masquer la topbar globale sur la page de login
 ob_start();
 ?>
 <form method="POST" action="/login" class="needs-validation" novalidate>
+    <input type="hidden" name="csrf_token" value="<?php echo $this->generateCsrfToken(); ?>">
+    
     <div class="mb-4">
         <label for="username" class="form-label fw-medium">Nom d'utilisateur</label>
         <div class="input-group">

@@ -85,10 +85,18 @@ abstract class Controller
 
     protected function validateCsrfToken(): bool
     {
+        error_log("validateCsrfToken: POST token = " . ($_POST['csrf_token'] ?? 'non défini'));
+        error_log("validateCsrfToken: SESSION token = " . ($_SESSION['csrf_token'] ?? 'non défini'));
+        
         if (!isset($_POST['csrf_token']) || !isset($_SESSION['csrf_token'])) {
+            error_log("validateCsrfToken: Échec - Un ou plusieurs jetons manquants");
             return false;
         }
-        return hash_equals($_SESSION['csrf_token'], $_POST['csrf_token']);
+        
+        $result = hash_equals($_SESSION['csrf_token'], $_POST['csrf_token']);
+        error_log("validateCsrfToken: Résultat = " . ($result ? 'OK' : 'Échec'));
+        
+        return $result;
     }
 
     protected function generateCsrfToken(): string

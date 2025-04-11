@@ -24,13 +24,7 @@ $dotenv = \Dotenv\Dotenv::createImmutable(__DIR__ . '/..');
 $dotenv->load();
 
 // Initialiser la base de données
-$db = \App\Core\Database::getInstance([
-    'host' => $_ENV['DB_HOST'] ?? 'localhost',
-    'dbname' => $_ENV['DB_DATABASE'] ?? 'senator_db',
-    'username' => $_ENV['DB_USERNAME'] ?? 'root',
-    'password' => $_ENV['DB_PASSWORD'] ?? '',
-    'charset' => $_ENV['DB_CHARSET'] ?? 'utf8mb4'
-]);
+$db = \App\Core\Database::getInstance();
 
 // Initialize router
 $router = new \App\Core\Router();
@@ -47,8 +41,10 @@ $router->get('/reset-password', [AuthController::class, 'showResetPassword']);
 $router->post('/reset-password', [AuthController::class, 'resetPassword']);
 
 // Dashboard routes
+$router->get('/', [DashboardController::class, 'index']);
 $router->get('/dashboard', [DashboardController::class, 'index']);
 $router->get('/dashboard/data', [DashboardController::class, 'getData']);
+$router->get('/dashboard/all-data', [DashboardController::class, 'getAllData']);
 
 // User routes
 $router->get('/users', [UserController::class, 'index']);
@@ -78,6 +74,9 @@ $router->get('/import/finish', [ImportController::class, 'finish']);
 $router->post('/import/finish', [ImportController::class, 'finish']);
 $router->get('/import/get-history', [ImportController::class, 'getHistory']);
 $router->get('/import/history', [ImportController::class, 'history']);
+$router->get('/import/check-async', [ImportController::class, 'checkAsyncImport']);
+$router->get('/import/export-duplicates', [ImportController::class, 'exportDuplicates']);
+$router->post('/import/preview', [ImportController::class, 'preview']);
 
 // Profile routes
 $router->get('/profile', [ProfileController::class, 'index']);

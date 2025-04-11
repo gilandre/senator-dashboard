@@ -17,35 +17,25 @@ class Database
         try {
             self::$config = DatabaseConfig::getConfig();
 
-            if (self::$config['driver'] === 'sqlite') {
-                $dsn = "sqlite:" . self::$config['path'];
-                $options = [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false
-                ];
-                self::$instance = new PDO($dsn, null, null, $options);
-            } else {
-                $dsn = "mysql:host=" . self::$config['host'] . 
-                       ";dbname=" . self::$config['dbname'] . 
-                       ";charset=" . self::$config['charset'];
+            $dsn = "mysql:host=" . self::$config['host'] . 
+                   ";dbname=" . self::$config['dbname'] . 
+                   ";charset=" . self::$config['charset'];
 
-                $options = [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
-                ];
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+                PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci"
+            ];
 
-                self::$instance = new PDO(
-                    $dsn,
-                    self::$config['username'],
-                    self::$config['password'],
-                    $options
-                );
-            }
+            self::$instance = new PDO(
+                $dsn,
+                self::$config['username'],
+                self::$config['password'],
+                $options
+            );
         } catch (PDOException $e) {
-            throw new PDOException("Erreur de connexion à la base de données : " . $e->getMessage());
+            throw new PDOException("Erreur de connexion à la base de données MySQL : " . $e->getMessage());
         }
     }
 

@@ -116,317 +116,240 @@ function loadDashboardData(date) {
     // Afficher les indicateurs de chargement
     document.querySelectorAll('.loading-spinner').forEach(spinner => {
         spinner.style.display = 'block';
-        console.log('Spinner affiché:', spinner.parentNode.parentNode.id);
     });
     
-    // Chargement des KPIs
-    loadAttendanceStats(date);
+    // Utiliser le point d'entrée consolidé pour éviter les multiples requêtes API
+    fetch(`/dashboard/all-data?date=${date}`)
+        .then(response => response.json())
+        .then(data => {
+            // Traiter les données d'assiduité
+            if (data.attendance) {
+                document.getElementById('totalCount').textContent = data.attendance.total;
+                document.getElementById('onTimeCount').textContent = data.attendance.onTime;
+                document.getElementById('lateCount').textContent = data.attendance.late;
+                document.getElementById('avgHoursValue').textContent = data.attendance.avgWorkingHours;
+            }
+            
+            // Traiter la distribution des heures d'arrivée
+            if (data.arrivalDistribution) {
+                renderArrivalChart(data.arrivalDistribution);
+            }
+            
+            // Traiter la distribution des heures de départ
+            if (data.departureDistribution) {
+                renderDepartureChart(data.departureDistribution);
+            }
+            
+            // Traiter les données des heures de travail
+            if (data.workingHours) {
+                renderWorkingHoursChart(data.workingHours);
+            }
+            
+            // Masquer tous les indicateurs de chargement
+            document.querySelectorAll('.loading-spinner, .chart-spinner').forEach(spinner => {
+                spinner.style.display = 'none';
+            });
+        })
+        .catch(error => {
+            console.error('Erreur lors du chargement des données:', error);
+            // Masquer tous les indicateurs de chargement en cas d'erreur
+            document.querySelectorAll('.loading-spinner, .chart-spinner').forEach(spinner => {
+                spinner.style.display = 'none';
+            });
+        });
+}
+
+/**
+ * Affiche le graphique des heures d'arrivée
+ * @param {Object} chartData - Données du graphique
+ */
+function renderArrivalChart(chartData) {
+    const ctx = document.getElementById('arrivalChart').getContext('2d');
     
-    // Chargement des graphiques
-    loadArrivalDistribution(date);
-    loadDepartureDistribution(date);
-    loadWorkingHoursData(date);
-}
-
-/**
- * Charge les statistiques d'assiduité
- * @param {string} date - Date au format YYYY-MM-DD
- */
-function loadAttendanceStats(date) {
-    fetch(`/dashboard/data?type=attendance&date=${date}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                // S'assurer que le spinner est masqué même en cas d'erreur
-                document.querySelectorAll('.dashboard-card.kpi-card .loading-spinner').forEach(spinner => {
-                    spinner.style.display = 'none';
-                    console.log('KPI spinner masqué en cas d\'erreur');
-                });
-                return;
-            }
-            
-            // Mise à jour des compteurs
-            document.getElementById('totalCount').textContent = data.total;
-            document.getElementById('onTimeCount').textContent = data.onTime;
-            document.getElementById('lateCount').textContent = data.late;
-            document.getElementById('avgHoursValue').textContent = data.avgWorkingHours;
-            
-            // Masquer les indicateurs de chargement des KPI cards
-            document.querySelectorAll('.dashboard-card.kpi-card .loading-spinner').forEach(spinner => {
-                spinner.style.display = 'none';
-                console.log('KPI spinner masqué après chargement des données');
-            });
-        })
-        .catch(error => {
-            console.error('Erreur lors du chargement des statistiques:', error);
-            document.querySelectorAll('.dashboard-card.kpi-card .loading-spinner').forEach(spinner => {
-                spinner.style.display = 'none';
-                console.log('KPI spinner masqué après erreur');
-            });
-        });
-}
-
-/**
- * Charge et affiche la distribution des heures d'arrivée
- * @param {string} date - Date au format YYYY-MM-DD
- */
-function loadArrivalDistribution(date) {
-    fetch(`/dashboard/data?type=arrivalDistribution&date=${date}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                // S'assurer que le spinner est masqué même en cas d'erreur
-                document.querySelector('#arrivalChartCard .chart-spinner').style.display = 'none';
-                console.log('Spinner du graphique arrivées masqué après erreur');
-                return;
-            }
-            
-            const ctx = document.getElementById('arrivalChart').getContext('2d');
-            
-            // Détruire le graphique existant s'il y en a un
-            if (window.arrivalChart instanceof Chart) {
-                window.arrivalChart.destroy();
-            }
-            
-            // Créer le nouveau graphique
-            window.arrivalChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'Nombre d\'arrivées',
-                        data: data.data,
-                        backgroundColor: 'rgba(75, 192, 192, 0.5)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 1
-                    }]
+    // Détruire le graphique existant s'il y en a un
+    if (window.arrivalChart instanceof Chart) {
+        window.arrivalChart.destroy();
+    }
+    
+    // Créer le nouveau graphique
+    window.arrivalChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Nombre d\'arrivées',
+                data: chartData.data,
+                backgroundColor: 'rgba(75, 192, 192, 0.5)',
+                borderColor: 'rgba(75, 192, 192, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Distribution des heures d\'arrivée'
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                precision: 0
-                            }
-                        }
-                    },
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Distribution des heures d\'arrivée'
-                        },
-                        legend: {
-                            display: false
-                        }
-                    }
+                legend: {
+                    display: false
                 }
-            });
-            
-            // Masquer l'indicateur de chargement
-            document.querySelector('#arrivalChartCard .chart-spinner').style.display = 'none';
-            console.log('Spinner du graphique arrivées masqué après chargement');
-        })
-        .catch(error => {
-            console.error('Erreur lors du chargement des heures d\'arrivée:', error);
-            // S'assurer que le spinner est masqué même en cas d'erreur
-            document.querySelector('#arrivalChartCard .chart-spinner').style.display = 'none';
-            console.log('Spinner du graphique arrivées masqué après exception');
-        });
+            }
+        }
+    });
 }
 
 /**
- * Charge et affiche la distribution des heures de départ
- * @param {string} date - Date au format YYYY-MM-DD
+ * Affiche le graphique des heures de départ
+ * @param {Object} chartData - Données du graphique
  */
-function loadDepartureDistribution(date) {
-    fetch(`/dashboard/data?type=departureDistribution&date=${date}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                // S'assurer que le spinner est masqué même en cas d'erreur
-                document.querySelector('#departureChartCard .chart-spinner').style.display = 'none';
-                console.log('Spinner du graphique départs masqué après erreur');
-                return;
-            }
-            
-            const ctx = document.getElementById('departureChart').getContext('2d');
-            
-            // Détruire le graphique existant s'il y en a un
-            if (window.departureChart instanceof Chart) {
-                window.departureChart.destroy();
-            }
-            
-            // Créer le nouveau graphique
-            window.departureChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: data.labels,
-                    datasets: [{
-                        label: 'Nombre de départs',
-                        data: data.data,
-                        backgroundColor: 'rgba(153, 102, 255, 0.5)',
-                        borderColor: 'rgba(153, 102, 255, 1)',
-                        borderWidth: 1
-                    }]
+function renderDepartureChart(chartData) {
+    const ctx = document.getElementById('departureChart').getContext('2d');
+    
+    // Détruire le graphique existant s'il y en a un
+    if (window.departureChart instanceof Chart) {
+        window.departureChart.destroy();
+    }
+    
+    // Créer le nouveau graphique
+    window.departureChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.labels,
+            datasets: [{
+                label: 'Nombre de départs',
+                data: chartData.data,
+                backgroundColor: 'rgba(153, 102, 255, 0.5)',
+                borderColor: 'rgba(153, 102, 255, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            },
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Distribution des heures de départ'
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                precision: 0
-                            }
-                        }
-                    },
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Distribution des heures de départ'
-                        },
-                        legend: {
-                            display: false
-                        }
-                    }
+                legend: {
+                    display: false
                 }
-            });
-            
-            // Masquer l'indicateur de chargement
-            document.querySelector('#departureChartCard .chart-spinner').style.display = 'none';
-            console.log('Spinner du graphique départs masqué après chargement');
-        })
-        .catch(error => {
-            console.error('Erreur lors du chargement des heures de départ:', error);
-            // S'assurer que le spinner est masqué même en cas d'erreur
-            document.querySelector('#departureChartCard .chart-spinner').style.display = 'none';
-            console.log('Spinner du graphique départs masqué après exception');
-        });
+            }
+        }
+    });
 }
 
 /**
- * Charge et affiche la répartition des heures de travail
- * @param {string} date - Date au format YYYY-MM-DD
+ * Affiche le graphique des heures de travail
+ * @param {Object} chartData - Données du graphique
  */
-function loadWorkingHoursData(date) {
-    fetch(`/dashboard/data?type=workingHours&date=${date}`)
-        .then(response => response.json())
-        .then(data => {
-            if (data.error) {
-                console.error('Erreur:', data.error);
-                // S'assurer que le spinner est masqué même en cas d'erreur
-                document.querySelector('#workingHoursChartCard .chart-spinner').style.display = 'none';
-                console.log('Spinner du graphique heures de travail masqué après erreur');
-                return;
+function renderWorkingHoursChart(chartData) {
+    const ctx = document.getElementById('workingHoursChart').getContext('2d');
+    
+    // Détruire le graphique existant s'il y en a un
+    if (window.workingHoursChart instanceof Chart) {
+        window.workingHoursChart.destroy();
+    }
+    
+    try {
+        // Vérifier le format des données (compatibilité avec l'ancien et le nouveau format)
+        let formattedData;
+        if (chartData.datasets) {
+            // Nouveau format
+            formattedData = {
+                labels: chartData.labels,
+                datasets: [{
+                    data: chartData.datasets[0].data,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.7)',
+                        'rgba(255, 159, 64, 0.7)',
+                        'rgba(255, 205, 86, 0.7)',
+                        'rgba(75, 192, 192, 0.7)',
+                        'rgba(54, 162, 235, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(255, 159, 64, 1)',
+                        'rgba(255, 205, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(54, 162, 235, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            };
+        } else {
+            // Ancien format
+            formattedData = {
+                labels: chartData.labels,
+                datasets: [{
+                    data: chartData.data,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.7)',
+                        'rgba(255, 159, 64, 0.7)',
+                        'rgba(255, 205, 86, 0.7)',
+                        'rgba(75, 192, 192, 0.7)',
+                        'rgba(54, 162, 235, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(255, 159, 64, 1)',
+                        'rgba(255, 205, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(54, 162, 235, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            };
+        }
+        
+        // Afficher les informations sur les heures de travail si disponibles
+        if (chartData.meta && chartData.meta.workDayStart && chartData.meta.workDayEnd) {
+            const workTimeInfo = document.querySelector('#workingHoursChartCard .card-footer');
+            if (workTimeInfo) {
+                // Formater les heures pour l'affichage (supprimer les secondes)
+                const startTime = chartData.meta.workDayStart.substr(0, 5);
+                const endTime = chartData.meta.workDayEnd.substr(0, 5);
+                workTimeInfo.innerHTML = `<small class="text-muted">Heures de travail configurées: ${startTime} - ${endTime}</small>`;
+                workTimeInfo.style.display = 'block';
             }
-            
-            const ctx = document.getElementById('workingHoursChart').getContext('2d');
-            
-            // Détruire le graphique existant s'il y en a un
-            if (window.workingHoursChart instanceof Chart) {
-                window.workingHoursChart.destroy();
-            }
-            
-            try {
-                // Vérifier le format des données (compatibilité avec l'ancien et le nouveau format)
-                let chartData;
-                if (data.datasets) {
-                    // Nouveau format
-                    chartData = {
-                        labels: data.labels,
-                        datasets: [{
-                            data: data.datasets[0].data,
-                            backgroundColor: [
-                                'rgba(255, 99, 132, 0.7)',
-                                'rgba(255, 159, 64, 0.7)',
-                                'rgba(255, 205, 86, 0.7)',
-                                'rgba(75, 192, 192, 0.7)',
-                                'rgba(54, 162, 235, 0.7)'
-                            ],
-                            borderColor: [
-                                'rgba(255, 99, 132, 1)',
-                                'rgba(255, 159, 64, 1)',
-                                'rgba(255, 205, 86, 1)',
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(54, 162, 235, 1)'
-                            ],
-                            borderWidth: 1
-                        }]
-                    };
-                } else {
-                    // Ancien format
-                    chartData = {
-                        labels: data.labels,
-                        datasets: [{
-                            data: data.data,
-                            backgroundColor: [
-                                'rgba(255, 99, 132, 0.7)',
-                                'rgba(255, 159, 64, 0.7)',
-                                'rgba(255, 205, 86, 0.7)',
-                                'rgba(75, 192, 192, 0.7)',
-                                'rgba(54, 162, 235, 0.7)'
-                            ],
-                            borderColor: [
-                                'rgba(255, 99, 132, 1)',
-                                'rgba(255, 159, 64, 1)',
-                                'rgba(255, 205, 86, 1)',
-                                'rgba(75, 192, 192, 1)',
-                                'rgba(54, 162, 235, 1)'
-                            ],
-                            borderWidth: 1
-                        }]
-                    };
-                }
-                
-                // Afficher les informations sur les heures de travail si disponibles
-                if (data.meta && data.meta.workDayStart && data.meta.workDayEnd) {
-                    const workTimeInfo = document.querySelector('#workingHoursChartCard .card-footer');
-                    if (workTimeInfo) {
-                        // Formater les heures pour l'affichage (supprimer les secondes)
-                        const startTime = data.meta.workDayStart.substr(0, 5);
-                        const endTime = data.meta.workDayEnd.substr(0, 5);
-                        workTimeInfo.innerHTML = `<small class="text-muted">Heures de travail configurées: ${startTime} - ${endTime}</small>`;
-                        workTimeInfo.style.display = 'block';
+        }
+        
+        // Créer le nouveau graphique
+        window.workingHoursChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: formattedData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Répartition des heures de travail'
                     }
                 }
-                
-                // Créer le nouveau graphique
-                window.workingHoursChart = new Chart(ctx, {
-                    type: 'doughnut',
-                    data: chartData,
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            title: {
-                                display: true,
-                                text: 'Répartition des heures de travail'
-                            }
-                        }
-                    }
-                });
-                
-                // Masquer l'indicateur de chargement
-                document.querySelector('#workingHoursChartCard .chart-spinner').style.display = 'none';
-                console.log('Spinner du graphique heures de travail masqué après chargement');
-            } catch (e) {
-                console.error('Erreur lors de la création du graphique:', e);
-                // S'assurer que le spinner est masqué même en cas d'erreur
-                document.querySelector('#workingHoursChartCard .chart-spinner').style.display = 'none';
-                console.log('Spinner du graphique heures de travail masqué après exception dans la création');
             }
-        })
-        .catch(error => {
-            console.error('Erreur lors du chargement des heures de travail:', error);
-            // S'assurer que le spinner est masqué même en cas d'erreur
-            document.querySelector('#workingHoursChartCard .chart-spinner').style.display = 'none';
-            console.log('Spinner du graphique heures de travail masqué après exception dans le fetch');
         });
+    } catch (e) {
+        console.error('Erreur lors de la création du graphique des heures de travail:', e);
+    }
 }
 
 /**
@@ -633,5 +556,100 @@ function showChartInfo(chartId) {
         window.chartInfoModal.show();
     } else {
         alert('Le système de modal n\'est pas disponible. ' + title + ': ' + content.replace(/<[^>]*>/g, ''));
+    }
+}
+
+/**
+ * Met à jour le graphique des heures de travail
+ * @param {Object} workingHoursData - Données des heures de travail
+ */
+function updateWorkingHoursChart(workingHoursData) {
+    const ctx = document.getElementById('workingHoursChart').getContext('2d');
+    
+    // Détruire le graphique existant s'il y en a un
+    if (window.workingHoursChart instanceof Chart) {
+        window.workingHoursChart.destroy();
+    }
+    
+    try {
+        // Vérifier le format des données (compatibilité avec l'ancien et le nouveau format)
+        let chartData;
+        if (workingHoursData.datasets) {
+            // Nouveau format
+            chartData = {
+                labels: workingHoursData.labels,
+                datasets: [{
+                    data: workingHoursData.datasets[0].data,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.7)',
+                        'rgba(255, 159, 64, 0.7)',
+                        'rgba(255, 205, 86, 0.7)',
+                        'rgba(75, 192, 192, 0.7)',
+                        'rgba(54, 162, 235, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(255, 159, 64, 1)',
+                        'rgba(255, 205, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(54, 162, 235, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            };
+        } else {
+            // Ancien format
+            chartData = {
+                labels: workingHoursData.labels,
+                datasets: [{
+                    data: workingHoursData.data,
+                    backgroundColor: [
+                        'rgba(255, 99, 132, 0.7)',
+                        'rgba(255, 159, 64, 0.7)',
+                        'rgba(255, 205, 86, 0.7)',
+                        'rgba(75, 192, 192, 0.7)',
+                        'rgba(54, 162, 235, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(255, 99, 132, 1)',
+                        'rgba(255, 159, 64, 1)',
+                        'rgba(255, 205, 86, 1)',
+                        'rgba(75, 192, 192, 1)',
+                        'rgba(54, 162, 235, 1)'
+                    ],
+                    borderWidth: 1
+                }]
+            };
+        }
+        
+        // Afficher les informations sur les heures de travail si disponibles
+        if (workingHoursData.meta && workingHoursData.meta.workDayStart && workingHoursData.meta.workDayEnd) {
+            const workTimeInfo = document.querySelector('#workingHoursChartCard .card-footer');
+            if (workTimeInfo) {
+                // Formater les heures pour l'affichage (supprimer les secondes)
+                const startTime = workingHoursData.meta.workDayStart.substr(0, 5);
+                const endTime = workingHoursData.meta.workDayEnd.substr(0, 5);
+                workTimeInfo.innerHTML = `<small class="text-muted">Heures de travail configurées: ${startTime} - ${endTime}</small>`;
+                workTimeInfo.style.display = 'block';
+            }
+        }
+        
+        // Créer le nouveau graphique
+        window.workingHoursChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: chartData,
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Répartition des heures de travail'
+                    }
+                }
+            }
+        });
+    } catch (e) {
+        console.error('Erreur lors de la création du graphique des heures de travail:', e);
     }
 } 

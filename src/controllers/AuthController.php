@@ -46,30 +46,25 @@ class AuthController extends Controller
         $username = $_POST['username'] ?? '';
         $password = $_POST['password'] ?? '';
         $remember = isset($_POST['remember']);
+        $csrfToken = $_POST['csrf_token'] ?? '';
 
         try {
             error_log("Tentative de connexion avec: " . $username);
             
-            // Authentification avec le nom d'utilisateur
-            $user = $this->authService->authenticate($username, $password);
+            // Validate CSRF token
+            if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
+                error_log("CSRF token validation failed. Expected: " . ($_SESSION['csrf_token'] ?? 'not set') . ", Got: " . $csrfToken);
+                $_SESSION['flash_error'] = 'Invalid CSRF token';
+                header('Location: /login');
+                exit;
+            }
             
-            if ($user) {
-                error_log("Authentification réussie pour l'utilisateur: " . $user->getId());
-                
-                // Démarrer la session si ce n'est pas déjà fait
-                if (session_status() !== PHP_SESSION_ACTIVE) {
-                    session_start();
-                }
-                
-                // Stocker directement dans $_SESSION pour éviter les problèmes avec la classe Session
-                $_SESSION['user_id'] = $user->getId();
-                $_SESSION['username'] = $user->getUsername();
-                $_SESSION['role'] = $user->getRole();
-                
-                error_log("Session après authentification: " . print_r($_SESSION, true));
+            // Authentification avec le nom d'utilisateur
+            if ($this->auth->login($username, $password)) {
+                error_log("Authentification réussie pour l'utilisateur: " . $this->auth->getUserId());
                 
                 if ($remember) {
-                    $token = $this->authService->generateRememberToken($user->getId());
+                    $token = $this->authService->generateRememberToken($this->auth->getUserId());
                     setcookie('remember_token', $token, time() + (30 * 24 * 60 * 60), '/', '', true, true);
                 }
                 

@@ -40,17 +40,36 @@ class ImportHistory extends Model
         
         $userId = $_SESSION['user_id'] ?? 0;
         $username = $_SESSION['username'] ?? 'systeme';
-        $successRate = ($stats['total'] > 0) ? round(($stats['imported'] / $stats['total']) * 100) : 0;
+        
+        // Calculer le taux de succès en tenant compte de toutes les lignes traitées avec succès
+        // Si un taux de succès est déjà inclus dans les statistiques, l'utiliser
+        $successRate = isset($stats['success_rate']) 
+            ? $stats['success_rate'] 
+            : (($stats['total'] > 0) 
+               ? round(100 * (($stats['imported'] + $stats['duplicates']) / $stats['total'])) 
+               : 0);
+        
+        // S'assurer que toutes les valeurs sont des nombres positifs
+        $total = max(0, (int)$stats['total']);
+        $imported = max(0, (int)$stats['imported']);
+        $duplicates = max(0, (int)$stats['duplicates']);
+        $errors = max(0, (int)$stats['errors']);
+        
+        // Vérifier la cohérence des statistiques
+        if ($total < ($imported + $duplicates + $errors)) {
+            error_log("ImportHistory::saveImportHistory - Statistiques incohérentes détectées");
+            $total = $imported + $duplicates + $errors;
+        }
         
         $params = [
             ':filename' => $filename,
             ':import_date' => date('Y-m-d H:i:s'),
             ':user_id' => $userId,
             ':username' => $username,
-            ':total_records' => $stats['total'],
-            ':imported_records' => $stats['imported'],
-            ':duplicate_records' => $stats['duplicates'],
-            ':error_records' => $stats['errors'],
+            ':total_records' => $total,
+            ':imported_records' => $imported,
+            ':duplicate_records' => $duplicates,
+            ':error_records' => $errors,
             ':success_rate' => $successRate,
             ':created_at' => date('Y-m-d H:i:s')
         ];
@@ -132,6 +151,6 @@ class ImportHistory extends Model
      */
     private static function getConnection(): PDO
     {
-        return self::getDB()->getConnection();
+        return \App\Core\Database::getInstance()->getConnection();
     }
 } 

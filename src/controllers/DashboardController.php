@@ -49,6 +49,15 @@ class DashboardController extends Controller
         $date = $_GET['date'] ?? $latestDate;
         $type = $_GET['type'] ?? 'daily';
 
+        // Cache key basé sur le type et la date pour réduire les requêtes redondantes
+        $cacheKey = "dashboard_{$type}_{$date}";
+        
+        // Vérifier si la donnée est en cache
+        if (isset($_SESSION[$cacheKey]) && !empty($_SESSION[$cacheKey])) {
+            echo $_SESSION[$cacheKey];
+            exit;
+        }
+
         // Nouvelle implémentation de match avec tous les types
         $data = match($type) {
             'daily' => [
@@ -65,7 +74,52 @@ class DashboardController extends Controller
             default => ['error' => 'Type de données non reconnu']
         };
 
-        echo json_encode($data);
+        // Mettre en cache la réponse pour les requêtes futures
+        $_SESSION[$cacheKey] = json_encode($data);
+        
+        echo $_SESSION[$cacheKey];
+        exit;
+    }
+    
+    /**
+     * Récupère toutes les données du tableau de bord en une seule requête
+     * Cette méthode améliore les performances en évitant les multiples requêtes Ajax
+     * 
+     * @return void
+     */
+    public function getAllData(): void
+    {
+        header('Content-Type: application/json');
+        
+        $latestDate = $this->dashboardService->getLatestDate();
+        $date = $_GET['date'] ?? $latestDate;
+        
+        // Cache key basé sur la date pour réduire les requêtes redondantes
+        $cacheKey = "dashboard_all_{$date}";
+        
+        // Vérifier si les données sont en cache
+        if (isset($_SESSION[$cacheKey]) && !empty($_SESSION[$cacheKey])) {
+            echo $_SESSION[$cacheKey];
+            exit;
+        }
+        
+        // Récupérer toutes les données en une seule fois
+        $data = [
+            'date' => $latestDate,
+            'stats' => $this->dashboardService->getDailyStats($date),
+            'locations' => $this->dashboardService->getTopLocations($date),
+            'groups' => $this->dashboardService->getGroupStats($date),
+            'peakHours' => $this->dashboardService->getPeakHours($date),
+            'attendance' => $this->dashboardService->getAttendanceStats($date),
+            'workingHours' => $this->dashboardService->getWorkingHoursData($date),
+            'arrivalDistribution' => $this->dashboardService->getArrivalDistribution($date),
+            'departureDistribution' => $this->dashboardService->getDepartureDistribution($date)
+        ];
+        
+        // Mettre en cache la réponse pour les requêtes futures
+        $_SESSION[$cacheKey] = json_encode($data);
+        
+        echo $_SESSION[$cacheKey];
         exit;
     }
 

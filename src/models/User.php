@@ -10,18 +10,24 @@ class User
     private $db;
     private $id;
     private $username;
-    private $email;
     private $password;
+    private $email;
     private $role;
     private $isActive;
-    private $isLocked;
+    private $lastLogin;
+    private $loginAttempts;
     private $failedAttempts;
+    private $lastAttempt;
+    private $passwordResetToken;
+    private $passwordResetExpires;
+    private $createdAt;
+    private $updatedAt;
+    private $isLocked;
+    private $passwordExpired;
     private $lastFailedAttempt;
     private $resetToken;
     private $resetTokenExpiresAt;
     private $passwordChangedAt;
-    private $createdAt;
-    private $updatedAt;
 
     public function __construct()
     {
@@ -41,16 +47,22 @@ class User
         $user = new User();
         $user->id = $data['id'];
         $user->username = $data['username'];
-        $user->email = $data['email'];
         $user->password = $data['password'];
+        $user->email = $data['email'];
         $user->role = $data['role'];
         $user->isActive = $data['is_active'];
-        $user->isLocked = $data['is_locked'];
+        $user->lastLogin = $data['last_login'] ?? null;
+        $user->loginAttempts = $data['login_attempts'] ?? 0;
         $user->failedAttempts = $data['failed_attempts'] ?? 0;
-        $user->lastFailedAttempt = $data['last_failed_attempt'];
-        $user->resetToken = $data['reset_token'];
-        $user->resetTokenExpiresAt = $data['reset_token_expires_at'];
-        $user->passwordChangedAt = $data['password_changed_at'];
+        $user->lastAttempt = $data['last_attempt'] ?? null;
+        $user->passwordResetToken = $data['password_reset_token'] ?? null;
+        $user->passwordResetExpires = $data['password_reset_expires'] ?? null;
+        $user->isLocked = $data['is_locked'] ?? false;
+        $user->passwordExpired = $data['password_expired'] ?? false;
+        $user->lastFailedAttempt = $data['last_failed_attempt'] ?? null;
+        $user->resetToken = $data['reset_token'] ?? null;
+        $user->resetTokenExpiresAt = $data['reset_token_expires_at'] ?? null;
+        $user->passwordChangedAt = $data['password_changed_at'] ?? null;
         $user->createdAt = $data['created_at'];
         $user->updatedAt = $data['updated_at'];
         
@@ -351,22 +363,36 @@ class User
      */
     public static function createDefaultAdminIfNecessary(): void
     {
-        $db = self::getDB();
-        $stmt = $db->query("SELECT COUNT(*) FROM users");
-        $userCount = (int) $stmt->fetchColumn();
+        $db = Database::getInstance()->getConnection();
         
-        if ($userCount === 0) {
-            // Créer l'utilisateur admin par défaut
-            $user = new self();
-            $user->username = 'admin';
-            $user->email = 'admin@example.com';
-            $user->password = password_hash('admin123', PASSWORD_DEFAULT);
-            $user->role = 'admin';
-            $user->created_at = date('Y-m-d H:i:s');
-            $user->updated_at = date('Y-m-d H:i:s');
-            $user->save();
+        // Check if admin user exists
+        $stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username = 'admin'");
+        $stmt->execute();
+        $count = $stmt->fetchColumn();
+        
+        if ($count === 0) {
+            error_log("Creating default admin user");
             
-            error_log("Utilisateur admin par défaut créé avec succès");
+            $stmt = $db->prepare("
+                INSERT INTO users (
+                    username, email, password, role, is_active,
+                    created_at, updated_at
+                ) VALUES (
+                    'admin',
+                    'admin@senator-investech.com',
+                    :password,
+                    'admin',
+                    1,
+                    NOW(),
+                    NOW()
+                )
+            ");
+            
+            $stmt->execute([
+                'password' => password_hash('password', PASSWORD_DEFAULT)
+            ]);
+            
+            error_log("Default admin user created successfully");
         }
     }
 } 
