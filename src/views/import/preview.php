@@ -1,4 +1,4 @@
-<?php $this->layout('layouts/main', ['title' => $title]) ?>
+<?php $this->layout('main', ['title' => $title]) ?>
 
 <div class="container-fluid">
     <div class="row">

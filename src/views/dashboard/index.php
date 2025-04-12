@@ -2,6 +2,8 @@
 $pageTitle = 'Tableau de bord RH - Assiduité';
 $currentPage = 'dashboard';
 $hideGlobalTopbar = false; // Activer la topbar globale standard
+$title = 'Tableau de bord'; // Pour la compatibilité avec le layout app.php
+$current_page = 'dashboard'; // Variable utilisée dans app.php
 
 // Vérification des données pour éviter les erreurs
 $dailyStats = $dailyStats ?? [];

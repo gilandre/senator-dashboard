@@ -1,4 +1,5 @@
 // Import routes
 ['POST', '/import/upload', [App\Controllers\ImportController::class, 'upload']],
 ['POST', '/import/preview', [App\Controllers\ImportController::class, 'preview']],
-['POST', '/import/process', [App\Controllers\ImportController::class, 'process']], 
+['POST', '/import/process', [App\Controllers\ImportController::class, 'process']],
+['GET', '/admin/import-diagnostics', [App\Controllers\ImportController::class, 'diagnosticPerformance']], 

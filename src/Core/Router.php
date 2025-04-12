@@ -54,10 +54,54 @@ class Router
         // Appliquer les règles spéciales pour certaines routes
         $this->handleSpecialRoutes($path, $method);
         
+        $controllerFound = false;
+        
+        // D'abord, essayer les routes exactes
         if (isset($this->routes[$method][$path])) {
             $controller = $this->routes[$method][$path];
-            error_log("Found controller: " . (is_array($controller) ? implode('@', $controller) : $controller));
-
+            error_log("Found exact route controller: " . (is_array($controller) ? implode('@', $controller) : $controller));
+            $controllerFound = true;
+        } else {
+            // Si aucune correspondance exacte, essayer les routes avec paramètres
+            foreach ($this->routes[$method] as $routePattern => $routeController) {
+                // Vérifier si le chemin contient des paramètres (marqués par {param})
+                if (strpos($routePattern, '{') !== false) {
+                    // Convertir le modèle de route en expression régulière
+                    $pattern = preg_replace('/\{([a-zA-Z0-9_]+)\}/', '([^/]+)', $routePattern);
+                    $pattern = str_replace('/', '\/', $pattern);
+                    $pattern = '/^' . $pattern . '$/';
+                    
+                    // Tester la correspondance
+                    if (preg_match($pattern, $path, $matches)) {
+                        error_log("Found parameter route match for: {$routePattern}");
+                        
+                        // Extraire les paramètres de l'URL
+                        $params = [];
+                        preg_match_all('/\{([a-zA-Z0-9_]+)\}/', $routePattern, $paramNames);
+                        
+                        // Décaler les correspondances pour supprimer la correspondance complète
+                        array_shift($matches);
+                        
+                        // Combiner les noms de paramètres avec leurs valeurs
+                        foreach ($paramNames[1] as $index => $name) {
+                            $params[$name] = $matches[$index] ?? null;
+                        }
+                        
+                        error_log("Route parameters: " . json_encode($params));
+                        
+                        // Stocker les paramètres pour utilisation dans le contrôleur
+                        $this->params = $params;
+                        
+                        // Sélectionner ce contrôleur
+                        $controller = $routeController;
+                        $controllerFound = true;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        if ($controllerFound) {
             if (is_array($controller)) {
                 // Handle array format ["Controller", "method"]
                 $controllerName = $controller[0];
@@ -80,44 +124,24 @@ class Router
             }
 
             error_log("Resolved class: {$class}, method: {$method}");
-
+            
             if (!class_exists($class)) {
-                error_log("Controller class not found: {$class}");
                 throw new \RuntimeException("Controller class {$class} not found");
             }
-
+            
             $instance = new $class();
-
+            
             if (!method_exists($instance, $method)) {
-                error_log("Method not found: {$method} in controller {$class}");
                 throw new \RuntimeException("Method {$method} not found in controller {$class}");
             }
-
-            // Autoriser l'accès aux routes publiques sans authentification
-            if (
-                $path === '/login' || 
-                $path === '/logout' || 
-                $path === '/forgot-password' || 
-                $path === '/reset-password' || 
-                $path === '/import/get-history'
-            ) {
-                $accessAllowed = true;
-            } 
-            // Sinon vérifier si l'utilisateur est connecté
-            else {
-                $auth = new \App\Core\Auth();
-                $accessAllowed = $auth->isLoggedIn();
-            }
-
-            if (!$accessAllowed) {
-                error_log("Access denied for {$method} {$path}: User not logged in");
-                // Rediriger vers la page de connexion
-                header('Location: /login');
-                exit;
-            }
-
+            
             error_log("Calling {$class}::{$method}");
-            $instance->$method();
+            // Si nous avons des paramètres, les passer à la méthode du contrôleur
+            if (!empty($this->params)) {
+                $instance->$method(...array_values($this->params));
+            } else {
+                $instance->$method();
+            }
         } else {
             error_log("No route found for {$method} {$path}");
             

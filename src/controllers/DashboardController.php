@@ -13,6 +13,8 @@ class DashboardController extends Controller
     public function __construct()
     {
         parent::__construct();
+        // Définir explicitement le layout à utiliser (comme dans ImportController)
+        $this->layout = 'layouts/app';
         $this->dashboardService = new DashboardService();
     }
 
@@ -23,6 +25,16 @@ class DashboardController extends Controller
      */
     public function index(): void
     {
+        // Ajouter des instructions de débogage
+        $logFile = __DIR__ . '/../../dashboard_debug.log';
+        file_put_contents($logFile, "=== ACCÈS AU TABLEAU DE BORD ===\n", FILE_APPEND);
+        file_put_contents($logFile, "Date: " . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Session ID: " . session_id() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Session status: " . session_status() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Session data: " . print_r($_SESSION, true) . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Is logged in: " . ($this->auth->isLoggedIn() ? "OUI" : "NON") . "\n", FILE_APPEND);
+        file_put_contents($logFile, "User ID: " . ($this->auth->getUserId() ?? "non défini") . "\n", FILE_APPEND);
+        
         // Vérifier l'authentification
         if (!isset($_SESSION['user_id']) || empty($_SESSION['user_id'])) {
             header('Location: /login');
@@ -32,7 +44,7 @@ class DashboardController extends Controller
         // Rendre la vue du tableau de bord
         $this->view('dashboard/index', [
             'title' => 'Tableau de bord RH',
-            'activeMenu' => 'dashboard'
+            'current_page' => 'dashboard'
         ]);
     }
 

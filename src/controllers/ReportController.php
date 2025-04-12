@@ -12,6 +12,8 @@ class ReportController extends Controller
     public function __construct()
     {
         parent::__construct();
+        // Définir explicitement le layout à utiliser (comme dans les autres contrôleurs)
+        $this->layout = 'layouts/app';
         $this->reportService = new ReportService();
     }
 
@@ -102,6 +104,8 @@ class ReportController extends Controller
 
         // Préparation des données pour la vue
         $viewData = [
+            'title' => 'Rapports',
+            'current_page' => 'reports',
             'data' => $data,
             'startDate' => $startDate,
             'endDate' => $endDate,
@@ -114,11 +118,8 @@ class ReportController extends Controller
             'errorMessage' => $errorMessage
         ];
 
-        // Extraction des variables pour la vue
-        extract($viewData);
-
-        // Inclusion de la vue
-        include __DIR__ . '/../views/reports/index.php';
+        // Utiliser la méthode view() pour appliquer le layout commun
+        $this->view('reports/index', $viewData);
     }
 
     private function getAvailableGroups(): array

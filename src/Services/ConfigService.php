@@ -44,8 +44,85 @@ class ConfigService
                 $this->settings[$row['setting_key']] = $row['setting_value'];
             }
         } catch (PDOException $e) {
-            // Si la table n'existe pas encore, on ne fait rien
+            // Si la table n'existe pas encore, on initialise avec des valeurs par défaut
             error_log("Erreur lors du chargement des paramètres: " . $e->getMessage());
+            
+            // Définir des valeurs par défaut en mémoire
+            $this->settings = [
+                'work_day_start_time' => '09:00:00',
+                'work_day_end_time' => '18:00:00',
+                'site_name' => 'SENATOR',
+                'site_description' => 'Système de gestion des accès',
+                'timezone' => 'Europe/Paris',
+                'max_login_attempts' => '3',
+                'default_language' => 'fr',
+                'session_lifetime' => '3600',
+                'file_upload_max_size' => '10485760', // 10MB
+                'allowed_file_types' => 'csv',
+                'backup_enabled' => '1',
+                'backup_frequency' => 'daily',
+                'backup_retention_days' => '30'
+            ];
+            
+            // Si on est en environnement de développement, tenter de créer la table
+            if (getenv('APP_ENV') === 'local' || getenv('APP_ENV') === 'development') {
+                $this->createSettingsTable();
+            }
+        }
+    }
+    
+    /**
+     * Crée la table settings si elle n'existe pas
+     */
+    private function createSettingsTable(): void
+    {
+        try {
+            $sql = "CREATE TABLE IF NOT EXISTS settings (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                setting_key VARCHAR(50) NOT NULL UNIQUE,
+                setting_value VARCHAR(255) NOT NULL,
+                description TEXT,
+                is_public BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )";
+            
+            $this->db->exec($sql);
+            
+            // Insérer les valeurs par défaut
+            foreach ($this->settings as $key => $value) {
+                $description = '';
+                $isPublic = true;
+                
+                switch ($key) {
+                    case 'work_day_start_time':
+                        $description = 'Heure de début de la journée de travail';
+                        break;
+                    case 'work_day_end_time':
+                        $description = 'Heure de fin de la journée de travail';
+                        break;
+                    case 'site_name':
+                        $description = 'Nom du site';
+                        break;
+                    case 'site_description':
+                        $description = 'Description du site';
+                        break;
+                    case 'timezone':
+                        $description = 'Fuseau horaire';
+                        break;
+                    case 'max_login_attempts':
+                        $description = 'Nombre maximum de tentatives de connexion';
+                        $isPublic = false;
+                        break;
+                    // Ajouter d'autres cas au besoin
+                }
+                
+                $this->set($key, $value, $description, $isPublic);
+            }
+            
+            error_log("Table settings créée avec succès et valeurs par défaut insérées.");
+        } catch (PDOException $e) {
+            error_log("Erreur lors de la création de la table settings: " . $e->getMessage());
         }
     }
 

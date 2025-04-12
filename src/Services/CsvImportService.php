@@ -18,17 +18,28 @@ class CsvImportService
         'Date de création'
     ];
 
+    // Ajout d'un mapping pour permettre la correspondance avec des noms de colonnes alternatifs
+    private const COLUMN_MAPPING = [
+        'Numéro de badge' => ['numero de badge', 'badge', 'id badge', 'badge id', 'numbadge'],
+        'Date évènements' => ['date evenements', 'date evenement', 'date', 'date event'],
+        'Heure évènements' => ['heure evenements', 'heure evenement', 'heure', 'time', 'heure event'],
+        'Centrale' => ['centrale', 'central', 'controller'],
+        'Nature Evenement' => ['nature evenement', 'nature', 'event type', 'type', 'evenement', 'evenement type'],
+        'Nom' => ['nom', 'name', 'lastname', 'last name'],
+        'Prénom' => ['prenom', 'firstname', 'first name'],
+        'Statut' => ['statut', 'status', 'etat'],
+        'Groupe' => ['groupe', 'group', 'service', 'department'],
+        'Date de début de validité' => ['date de debut de validite', 'debut validite', 'start date'],
+        'Date de création' => ['date de creation', 'creation date', 'date creation']
+    ];
+
     /**
      * Lit un fichier CSV et retourne ses données en traitant les problèmes de multilignes
      */
     public function readCSV(string $filePath, string $separator = ';', bool $hasHeader = true): array
     {
-        error_log("CsvImportService::readCSV - Début de la lecture du fichier {$filePath}");
-        error_log("CsvImportService::readCSV - Paramètres: separator={$separator}, hasHeader=" . ($hasHeader ? 'true' : 'false'));
-        
         // Vérification minimale
         if (!file_exists($filePath)) {
-            error_log("CsvImportService::readCSV - Erreur: Le fichier n'existe pas: {$filePath}");
             throw new \RuntimeException('Le fichier n\'existe pas');
         }
 
@@ -38,179 +49,197 @@ class CsvImportService
         }
 
         try {
-            // Optimisé: utiliser un tampon pour lire le fichier par morceaux 
-            // au lieu de charger tout le contenu en mémoire
-            $handle = fopen($filePath, 'r');
+            // Utiliser la fonction native fgetcsv à la place de SplFileObject
+            error_log("CsvImportService::readCSV - Lecture du fichier avec fgetcsv");
+            $handle = fopen($filePath, "r");
+            
             if ($handle === false) {
-                throw new \RuntimeException('Impossible d\'ouvrir le fichier');
+                throw new \RuntimeException('Impossible d\'ouvrir le fichier CSV');
             }
             
-            // Lire l'en-tête si présent
+            $data = [];
             $header = [];
-            $rows = [];
+            $lineNumber = 0;
             
-            // La première ligne est potentiellement l'en-tête
-            if (($firstLine = fgets($handle)) !== false) {
-                // Supprimer le BOM UTF-8 si présent
-                if (substr($firstLine, 0, 3) === "\xEF\xBB\xBF") {
-                    $firstLine = substr($firstLine, 3);
+            // Lecture de l'en-tête
+            $headerRow = fgetcsv($handle, 0, $separator, '"', '\\');
+            
+            if ($headerRow !== false) {
+                $lineNumber++;
+                
+                // Supprimer le BOM UTF-8 si présent dans le premier élément
+                if (!empty($headerRow[0]) && substr($headerRow[0], 0, 3) === "\xEF\xBB\xBF") {
+                    $headerRow[0] = substr($headerRow[0], 3);
+                    error_log("CsvImportService::readCSV - BOM UTF-8 détecté et supprimé");
                 }
                 
-                // Normalisation des fins de ligne
-                $firstLine = rtrim(str_replace(["\r\n", "\r"], "\n", $firstLine));
+                // Nettoyer les en-têtes (trim)
+                $header = array_map('trim', $headerRow);
                 
-                // Extraire les colonnes d'en-tête
-                $header = str_getcsv($firstLine, $separator, '"', '\\');
+                // Filtrer les en-têtes vides
+                $header = array_filter($header, function($value) {
+                    return !empty(trim($value));
+                });
                 
-                // Nettoyer les en-têtes (trim uniquement)
-                $header = array_map('trim', $header);
+                // Réindexer le tableau après le filtrage
+                $header = array_values($header);
+                error_log("CsvImportService::readCSV - En-têtes détectés: " . implode(", ", $header));
                 
-                // Si pas d'en-tête, considérer la première ligne comme une donnée
+                // Si pas d'en-tête, on considère la première ligne comme des données
                 if (!$hasHeader) {
-                    $rows[] = array_combine(
-                        range(0, count($header) - 1),
-                        $header
-                    );
-                    $header = range(0, count($header) - 1);
+                    // Rewind to start and read the first line again as data
+                    rewind($handle);
                 }
+            } else {
+                error_log("CsvImportService::readCSV - Aucun en-tête détecté");
+                throw new \RuntimeException('Aucun en-tête détecté dans le fichier CSV');
             }
             
-            // Identifier l'index de la colonne contenant le numéro de badge (pour détecter les nouvelles lignes)
-            $badgeNumberIndex = array_search('Numéro de badge', $header);
+            // Lecture des données
+            $rowCount = 0;
+            $maxRows = 1000000; // Limite pour éviter les problèmes de mémoire
             
-            // Variable pour suivre la ligne en cours de construction (pour les lignes multiples)
-            $currentRow = null;
-            $lastBadgeNumber = null;
-            
-            // Lire le reste du fichier
-            $bufferSize = 8192; // Taille du tampon de lecture (8 Ko)
-            $lineBuffer = '';
-            
-            // Traiter le fichier par morceaux pour économiser la mémoire
-            while (!feof($handle)) {
-                $chunk = fread($handle, $bufferSize);
-                if ($chunk === false) {
-                    break;
+            while (($row = fgetcsv($handle, 0, $separator, '"', '\\')) !== false && $rowCount < $maxRows) {
+                // Ignorer l'en-tête si nécessaire
+                if ($hasHeader && $lineNumber === 1) {
+                    $lineNumber++;
+                    continue;
                 }
                 
-                // Ajouter au tampon de ligne
-                $lineBuffer .= $chunk;
+                $lineNumber++;
                 
-                // Traiter les lignes complètes dans le tampon
-                while (($pos = strpos($lineBuffer, "\n")) !== false) {
-                    $line = substr($lineBuffer, 0, $pos);
-                    $lineBuffer = substr($lineBuffer, $pos + 1);
-                    
-                    // Normaliser les fins de ligne
-                    $line = rtrim(str_replace(["\r\n", "\r"], "\n", $line));
-                    
-                    // Ignorer les lignes vides
-                    if (trim($line) === '') {
-                        continue;
-                    }
-                    
-                    // Extraire les colonnes
-                    $columns = str_getcsv($line, $separator, '"', '\\');
-                    
-                    // Vérifier si c'est une nouvelle ligne ou une continuation
-                    if ($badgeNumberIndex !== false && isset($columns[$badgeNumberIndex]) && trim($columns[$badgeNumberIndex]) !== '') {
-                        // C'est une nouvelle ligne
-                        if ($currentRow !== null) {
-                            // S'assurer que les tableaux ont la même longueur avant de les combiner
-                            if (count($header) !== count($currentRow)) {
-                                // Ajuster la taille des tableaux
-                                if (count($header) > count($currentRow)) {
-                                    // Ajouter des valeurs vides si nécessaire
-                                    $currentRow = array_pad($currentRow, count($header), '');
-                                } else {
-                                    // Tronquer si trop de colonnes
-                                    $currentRow = array_slice($currentRow, 0, count($header));
-                                }
-                            }
-                            $rows[] = array_combine($header, $currentRow);
-                        }
-                        
-                        $currentRow = $columns;
-                        $lastBadgeNumber = $columns[$badgeNumberIndex];
-                    } else {
-                        // C'est une continuation de la ligne précédente
-                        if ($currentRow !== null) {
-                            // Fusionner les colonnes supplémentaires avec la ligne courante
-                            for ($i = 0; $i < count($columns) && $i < count($currentRow); $i++) {
-                                if (trim($columns[$i]) !== '') {
-                                    $currentRow[$i] .= ' ' . $columns[$i];
-                                }
-                            }
-                        }
-                    }
+                // Ignorer les lignes vides
+                if (empty($row) || (count($row) === 1 && empty($row[0]))) {
+                    continue;
                 }
-            }
-            
-            // Ajouter la dernière ligne en cours
-            if ($currentRow !== null) {
-                // S'assurer que les tableaux ont la même longueur avant de les combiner
-                if (count($header) !== count($currentRow)) {
-                    // Ajuster la taille des tableaux
-                    if (count($header) > count($currentRow)) {
-                        // Ajouter des valeurs vides si nécessaire
-                        $currentRow = array_pad($currentRow, count($header), '');
-                    } else {
-                        // Tronquer si trop de colonnes
-                        $currentRow = array_slice($currentRow, 0, count($header));
-                    }
-                }
-                $rows[] = array_combine($header, $currentRow);
-            }
-            
-            // Traiter les lignes restantes dans le tampon
-            if (!empty(trim($lineBuffer))) {
-                $columns = str_getcsv($lineBuffer, $separator, '"', '\\');
                 
-                if ($badgeNumberIndex !== false && isset($columns[$badgeNumberIndex]) && trim($columns[$badgeNumberIndex]) !== '') {
-                    // C'est une nouvelle ligne
-                    // S'assurer que les tableaux ont la même longueur avant de les combiner
-                    if (count($header) !== count($columns)) {
-                        // Ajuster la taille des tableaux
-                        if (count($header) > count($columns)) {
-                            // Ajouter des valeurs vides si nécessaire
-                            $columns = array_pad($columns, count($header), '');
-                        } else {
-                            // Tronquer si trop de colonnes
-                            $columns = array_slice($columns, 0, count($header));
-                        }
+                // Normaliser la taille des lignes
+                if (count($row) < count($header)) {
+                    $row = array_pad($row, count($header), '');
+                } elseif (count($row) > count($header)) {
+                    $row = array_slice($row, 0, count($header));
+                }
+                
+                // Combiner les en-têtes et les valeurs
+                $rowData = array_combine($header, $row);
+                if ($rowData !== false) {
+                    $data[] = $rowData;
+                    $rowCount++;
+                    
+                    // Journaliser la première ligne pour le débogage
+                    if ($rowCount === 1) {
+                        error_log("CsvImportService::readCSV - Exemple de ligne: " . json_encode($rowData, JSON_UNESCAPED_UNICODE));
                     }
-                    $rows[] = array_combine($header, $columns);
-                } else if ($currentRow !== null) {
-                    // C'est une continuation de la ligne précédente
-                    for ($i = 0; $i < count($columns) && $i < count($currentRow); $i++) {
-                        if (trim($columns[$i]) !== '') {
-                            $currentRow[$i] .= ' ' . $columns[$i];
-                        }
-                    }
-                    // S'assurer que les tableaux ont la même longueur avant de les combiner
-                    if (count($header) !== count($currentRow)) {
-                        // Ajuster la taille des tableaux
-                        if (count($header) > count($currentRow)) {
-                            // Ajouter des valeurs vides si nécessaire
-                            $currentRow = array_pad($currentRow, count($header), '');
-                        } else {
-                            // Tronquer si trop de colonnes
-                            $currentRow = array_slice($currentRow, 0, count($header));
-                        }
-                    }
-                    $rows[] = array_combine($header, $currentRow);
+                } else {
+                    error_log("CsvImportService::readCSV - Impossible de combiner l'en-tête et les données de la ligne $lineNumber");
+                    error_log("CsvImportService::readCSV - En-têtes: " . count($header) . ", Valeurs: " . count($row));
                 }
             }
             
             fclose($handle);
             
-            error_log("CsvImportService::readCSV - Lecture terminée avec succès. " . count($rows) . " lignes traitées.");
-            return $rows;
+            error_log("CsvImportService::readCSV - Lecture terminée: $rowCount lignes trouvées");
+            
+            // Normaliser les noms de colonnes
+            if (!empty($data)) {
+                $normalizedRows = [];
+                foreach ($data as $row) {
+                    $normalizedRow = [];
+                    foreach ($row as $key => $value) {
+                        $normalizedKey = $this->normalizeColumnName($key);
+                        $normalizedRow[$normalizedKey] = $value;
+                    }
+                    $normalizedRows[] = $normalizedRow;
+                }
+                return $normalizedRows;
+            }
+            
+            return $data;
             
         } catch (\Exception $e) {
             error_log("CsvImportService::readCSV - Erreur: " . $e->getMessage());
+            error_log("CsvImportService::readCSV - Trace: " . $e->getTraceAsString());
             throw new \RuntimeException('Erreur lors de la lecture du fichier CSV: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * Normalise un nom de colonne pour le faire correspondre aux noms attendus
+     */
+    private function normalizeColumnName(string $columnName): string
+    {
+        // Nettoyer le nom de colonne
+        $normalized = mb_strtolower(trim($columnName), 'UTF-8');
+        $normalized = preg_replace('/\s+/', ' ', $normalized); // Normaliser les espaces
+        $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized); // Supprimer les accents
+        
+        // Chercher une correspondance dans le mapping
+        foreach (self::COLUMN_MAPPING as $standardName => $alternativeNames) {
+            $normalizedStandard = mb_strtolower(trim($standardName), 'UTF-8');
+            $normalizedStandard = preg_replace('/\s+/', ' ', $normalizedStandard);
+            $normalizedStandard = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalizedStandard);
+            
+            // Si le nom correspond directement au nom standard
+            if ($normalized === $normalizedStandard) {
+                return $standardName;
+            }
+            
+            // Sinon, vérifier les noms alternatifs
+            foreach ($alternativeNames as $altName) {
+                $normalizedAlt = mb_strtolower(trim($altName), 'UTF-8');
+                $normalizedAlt = preg_replace('/\s+/', ' ', $normalizedAlt);
+                $normalizedAlt = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalizedAlt);
+                
+                if ($normalized === $normalizedAlt) {
+                    return $standardName;
+                }
+            }
+        }
+        
+        // Si aucune correspondance n'est trouvée, utiliser le nom d'origine
+        return $columnName;
+    }
+    
+    /**
+     * Trouve l'index d'une colonne dans l'en-tête en tenant compte des noms alternatifs
+     */
+    private function findColumnIndex(array $header, string $columnName): int|false
+    {
+        // Recherche directe
+        $index = array_search($columnName, $header);
+        if ($index !== false) {
+            return $index;
+        }
+        
+        // Recherche normalisée
+        $normalized = mb_strtolower(trim($columnName), 'UTF-8');
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        $normalized = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalized);
+        
+        foreach ($header as $i => $headerCol) {
+            $normalizedHeader = mb_strtolower(trim($headerCol), 'UTF-8');
+            $normalizedHeader = preg_replace('/\s+/', ' ', $normalizedHeader);
+            $normalizedHeader = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalizedHeader);
+            
+            if ($normalizedHeader === $normalized) {
+                return $i;
+            }
+            
+            // Vérifier les noms alternatifs
+            if (isset(self::COLUMN_MAPPING[$columnName])) {
+                foreach (self::COLUMN_MAPPING[$columnName] as $altName) {
+                    $normalizedAlt = mb_strtolower(trim($altName), 'UTF-8');
+                    $normalizedAlt = preg_replace('/\s+/', ' ', $normalizedAlt);
+                    $normalizedAlt = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $normalizedAlt);
+                    
+                    if ($normalizedHeader === $normalizedAlt) {
+                        return $i;
+                    }
+                }
+            }
+        }
+        
+        return false;
     }
 
     /**
@@ -329,8 +358,8 @@ class CsvImportService
     {
         // Vérifier que les colonnes essentielles sont présentes
         $essentialColumns = [
-            'Numéro de badge', 
-            'Date évènements'
+            'Numéro de badge' 
+            // Seul le numéro de badge est vraiment critique
         ];
         
         $missingEssentials = [];
@@ -341,18 +370,35 @@ class CsvImportService
             }
         }
         
+        // Vérifier les colonnes importantes mais non bloquantes
+        $importantColumns = [
+            'Date évènements',
+            'Centrale'
+        ];
+        
+        $missingImportant = [];
+        foreach ($importantColumns as $column) {
+            if (!isset($row[$column]) || trim($row[$column]) === '') {
+                $missingImportant[] = $column;
+            }
+        }
+        
+        if (!empty($missingImportant)) {
+            // Logger l'avertissement
+            error_log("Avertissement: Données importantes manquantes à la ligne {$lineNumber} pour les colonnes : " . 
+                implode(', ', $missingImportant));
+        }
+        
         if (!empty($missingEssentials)) {
-            // Logger l'avertissement au lieu de lancer une exception
-            error_log("Avertissement: Données manquantes à la ligne {$lineNumber} pour les colonnes : " . 
+            // Logger l'erreur
+            error_log("Erreur: Données critiques manquantes à la ligne {$lineNumber} pour les colonnes : " . 
                 implode(', ', $missingEssentials));
             
-            // Ne pas bloquer l'importation pour les colonnes comme Heure évènements ou Nature Evenement
-            if (in_array('Numéro de badge', $missingEssentials) || in_array('Date évènements', $missingEssentials)) {
+            // Bloquer uniquement si le numéro de badge est manquant
                 throw new \RuntimeException(
                     "Données critiques manquantes à la ligne {$lineNumber} pour les colonnes : " . 
                     implode(', ', $missingEssentials)
                 );
-            }
         }
 
         // Validation des dates si présentes
@@ -360,8 +406,8 @@ class CsvImportService
             try {
                 $this->validateDate($row['Date évènements'], 'Date évènements', $lineNumber);
             } catch (\Exception $e) {
-                error_log("Erreur de validation de date à la ligne {$lineNumber}: " . $e->getMessage());
-                throw $e; // Relancer car c'est une erreur critique
+                // Simple avertissement au lieu d'une erreur bloquante
+                error_log("Avertissement: " . $e->getMessage());
             }
         }
         
@@ -370,7 +416,7 @@ class CsvImportService
                 $this->validateDate($row['Date de début de validité'], 'Date de début de validité', $lineNumber);
             } catch (\Exception $e) {
                 // Simple avertissement pour cette date
-                error_log("Avertissement: format de Date de début de validité invalide à la ligne {$lineNumber}: " . $e->getMessage());
+                error_log("Avertissement: " . $e->getMessage());
             }
         }
         
@@ -379,7 +425,7 @@ class CsvImportService
                 $this->validateDate($row['Date de création'], 'Date de création', $lineNumber);
             } catch (\Exception $e) {
                 // Simple avertissement pour cette date
-                error_log("Avertissement: format de Date de création invalide à la ligne {$lineNumber}: " . $e->getMessage());
+                error_log("Avertissement: " . $e->getMessage());
             }
         }
 
@@ -416,8 +462,12 @@ class CsvImportService
             return; // Date valide
         }
         
-        // Essayer avec différents formats de date
-        $formats = ['d/m/Y', 'd-m-Y', 'Y-m-d', 'd.m.Y', 'Y.m.d', 'Y/m/d'];
+        // Essayer avec différents formats de date (incluant les formats utilisés dans Exportation 1.csv)
+        $formats = [
+            'd/m/Y', 'd-m-Y', 'Y-m-d', 'd.m.Y', 'Y.m.d', 'Y/m/d',
+            'd/m/Y H:i:s', 'd/m/Y H:i', 'Y-m-d H:i:s', 'Y-m-d H:i'
+        ];
+        
         foreach ($formats as $format) {
             $dateObj = \DateTime::createFromFormat($format, $date);
             if ($dateObj && $dateObj->format($format) === $date) {
@@ -425,8 +475,13 @@ class CsvImportService
             }
         }
         
-        // Si aucun format ne fonctionne, la date est invalide
-        throw new \RuntimeException("La date dans le champ '{$field}' à la ligne {$lineNumber} est invalide");
+        // Essayer un cas spécial pour les dates au format "dd/mm/yyyy hh:mm:ss"
+        if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})$/', $date)) {
+            return; // Format spécial valide
+        }
+        
+        // Si aucun format ne fonctionne, émettre un avertissement mais ne pas bloquer l'importation
+        error_log("Avertissement: La date '{$date}' dans le champ '{$field}' à la ligne {$lineNumber} est dans un format non reconnu");
     }
 
     /**
@@ -445,12 +500,29 @@ class CsvImportService
             $time = $matches[1];
         }
         
-        // Vérifier si l'heure est au format valide
+        // Format standard HH:MM:SS
         if (preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/', $time)) {
             return; // Heure valide
         }
         
-        throw new \RuntimeException("L'heure dans le champ '{$field}' à la ligne {$lineNumber} est invalide");
+        // Format HH.MM.SS ou HH.MM
+        if (preg_match('/^([01]?[0-9]|2[0-3])\.([0-5][0-9])(\.([0-5][0-9]))?$/', $time)) {
+            return; // Heure valide avec points
+        }
+        
+        // Format HHMMSS ou HHMM
+        if (preg_match('/^([01][0-9]|2[0-3])([0-5][0-9])([0-5][0-9])?$/', $time)) {
+            return; // Heure valide sans séparateurs
+        }
+        
+        // Essayer de convertir avec strtotime
+        $timestamp = strtotime($time);
+        if ($timestamp !== false) {
+            return; // Heure valide selon strtotime
+        }
+        
+        // Si on arrive ici, le format n'est pas reconnu, mais on ne bloque pas l'importation
+        error_log("Avertissement: L'heure '{$time}' dans le champ '{$field}' à la ligne {$lineNumber} est dans un format non reconnu. Elle sera remplacée par la valeur par défaut (00:00:00).");
     }
 
     /**

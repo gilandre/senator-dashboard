@@ -10,43 +10,123 @@ abstract class Controller
     protected array $data = [];
     protected string $layout = 'layouts/default';
 
+    /**
+     * Indique si le monitoring de performance est activé
+     * @var bool
+     */
+    protected $performanceMonitoring = true;
+
     public function __construct()
     {
         $this->auth = new Auth();
     }
 
-    protected function view(string $view, array $data = []): void
+    /**
+     * Méthode pour appliquer un layout à une vue
+     * @param string $layoutName Nom du layout
+     * @param array $data Données à passer au layout
+     */
+    public function layout(string $layoutName, array $data = []): void
     {
-        // Passer l'objet auth aux données pour le layout
-        $data['auth'] = $this->auth;
-        
-        extract($data);
-        $this->data = $data;
-        
-        $viewFile = __DIR__ . "/../views/{$view}.php";
-        if (!file_exists($viewFile)) {
-            throw new \Exception("View file not found: {$viewFile}");
-        }
-
-        ob_start();
-        require_once $viewFile;
+        // Récupérer le contenu de la vue courante
         $content = ob_get_clean();
-
-        // Si le layout est déjà géré dans la vue (usage de ob_start/ob_get_clean)
-        if (isset($content) && strpos($content, '<!DOCTYPE html>') !== false) {
-            echo $content;
-            return;
+        
+        // Démarrer un nouveau buffer pour le layout
+        ob_start();
+        
+        // Rendre les variables disponibles dans le layout
+        extract($data);
+        
+        // Vérifier si le nom du layout commence déjà par "layouts/"
+        if (strpos($layoutName, 'layouts/') === 0) {
+            // Si oui, utiliser le chemin directement
+            require __DIR__ . "/../views/{$layoutName}.php";
+        } else {
+            // Sinon, ajouter "layouts/" au chemin
+            require __DIR__ . "/../views/layouts/{$layoutName}.php";
         }
         
-        if ($this->layout === 'layouts/auth') {
-            require_once __DIR__ . "/../views/{$this->layout}.php";
-        } else {
-            $layoutFile = __DIR__ . "/../views/{$this->layout}.php";
-            if (!file_exists($layoutFile)) {
-                throw new \Exception("Layout file not found: {$layoutFile}");
-            }
-            require_once $layoutFile;
+        // Envoyer le contenu au navigateur
+        echo ob_get_clean();
+        exit;
+    }
+
+    /**
+     * Affiche une vue
+     *
+     * @param string $view Le nom de la vue à afficher
+     * @param array $data Les données à transmettre à la vue
+     */
+    public function view(string $view, array $data = [])
+    {
+        // Démarrer le timer de performance s'il est activé
+        if ($this->performanceMonitoring && class_exists('\App\Helpers\PerformanceHelper')) {
+            \App\Helpers\PerformanceHelper::startTimer('view-render');
         }
+        
+        // Ajouter automatiquement le titre si non spécifié
+        if (!isset($data['title'])) {
+            $data['title'] = ucfirst(str_replace('_', ' ', $view));
+        }
+        
+        // Ajouter des informations communes à toutes les vues
+        $data['current_user'] = $_SESSION['user'] ?? null;
+        $data['is_authenticated'] = isset($_SESSION['user']);
+        $data['flash_messages'] = $this->getFlashMessages();
+        $data['current_route'] = $_SERVER['REQUEST_URI'];
+        $data['app_name'] = $_ENV['APP_NAME'] ?? 'SENATOR';
+        $data['debug_mode'] = $_ENV['APP_DEBUG'] ?? false;
+        
+        // Préparer le chemin du fichier de vue
+        $viewPath = str_replace('.', '/', $view);
+        $viewFile = __DIR__ . "/../views/$viewPath.php";
+        
+        // Vérifier que le fichier de vue existe
+        if (!file_exists($viewFile)) {
+            throw new \Exception("Vue '$viewPath' introuvable.");
+        }
+        
+        // Extraire les données pour qu'elles soient disponibles dans la vue
+        extract($data);
+        
+        // Démarrer la capture de sortie
+        ob_start();
+        
+        // Inclure le fichier de vue
+        include $viewFile;
+        
+        // Récupérer le contenu de la vue
+        $content = ob_get_clean();
+        
+        // Inclure le layout si spécifié
+        if (isset($this->layout) && $this->layout) {
+            $layoutFile = __DIR__ . "/../views/$this->layout.php";
+            
+            if (!file_exists($layoutFile)) {
+                throw new \Exception("Layout '$this->layout' introuvable.");
+            }
+            
+            // Extraire à nouveau les données pour qu'elles soient disponibles dans le layout
+            extract($data);
+            
+            // Démarrer une nouvelle capture pour le layout
+            ob_start();
+            
+            // Inclure le fichier de layout
+            include $layoutFile;
+            
+            // Remplacer le contenu original par le contenu avec layout
+            $content = ob_get_clean();
+        }
+        
+        // Ajouter le rapport de performance si activé
+        if ($this->performanceMonitoring && class_exists('\App\Helpers\PerformanceHelper')) {
+            \App\Helpers\PerformanceHelper::stopTimer('view-render');
+            \App\Helpers\PerformanceHelper::appendToResponse($content);
+        }
+        
+        // Afficher le contenu final
+        echo $content;
     }
 
     protected function redirect(string $url): void
@@ -144,5 +224,22 @@ abstract class Controller
             'type' => $type,
             'message' => $message
         ];
+    }
+
+    /**
+     * Récupère les messages flash et les supprime de la session
+     *
+     * @return array Messages flash par type
+     */
+    protected function getFlashMessages(): array
+    {
+        $messages = [];
+        
+        if (isset($_SESSION['flash_messages'])) {
+            $messages = $_SESSION['flash_messages'];
+            unset($_SESSION['flash_messages']);
+        }
+        
+        return $messages;
     }
 } 

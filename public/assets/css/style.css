@@ -963,4 +963,59 @@ body.sidebar-collapsed .main-content {
 
 .custom-dropdown-item:last-child {
     border-radius: 0 0 8px 8px;
+}
+
+/* Améliorations du menu déroulant utilisateur (ajout d'une plus haute spécificité) */
+.global-topbar .dropdown-container {
+    position: relative;
+    z-index: 1100;
+}
+
+.global-topbar .user-icon-btn {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: var(--primary-color);
+    cursor: pointer;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    position: relative;
+}
+
+.global-topbar .user-icon-btn:hover {
+    background-color: rgba(0,0,0,0.05);
+}
+
+.global-topbar .custom-dropdown-menu {
+    position: absolute;
+    right: 0;
+    top: 45px;
+    background-color: white;
+    min-width: 220px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    border-radius: 8px;
+    display: none;
+    z-index: 1200;
+    padding: 12px 0;
+    border: 1px solid var(--border-color);
+}
+
+.global-topbar .custom-dropdown-menu.show {
+    display: block !important;
+    animation: fadeIn 0.3s ease;
+}
+
+/* S'assurer que les autres styles n'interfèrent pas */
+.dropdown-menu, 
+.navbar .dropdown-menu {
+    z-index: 1000;
+}
+
+.global-topbar .custom-dropdown-menu {
+    z-index: 1200;
 } 

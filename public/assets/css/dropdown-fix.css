@@ -1,0 +1,103 @@
+/**
+ * Styles prioritaires pour le menu déroulant utilisateur
+ * Ces styles utilisent !important pour s'assurer qu'ils ont priorité sur tous les autres styles
+ */
+
+/* Conteneur du dropdown utilisateur */
+.dropdown-container {
+    position: relative !important;
+    z-index: 9999 !important;
+}
+
+/* Bouton d'icône utilisateur */
+#userDropdown {
+    background: none !important;
+    border: none !important;
+    font-size: 20px !important;
+    color: #3a4cb2 !important; 
+    cursor: pointer !important;
+    width: 40px !important;
+    height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 50% !important;
+    transition: all 0.3s ease !important;
+    position: relative !important;
+    z-index: 9999 !important;
+    background-color: #f8f9fa !important;
+}
+
+#userDropdown:hover {
+    background-color: #e9ecef !important;
+}
+
+/* Menu déroulant */
+#userDropdownMenu {
+    position: absolute !important;
+    right: 0 !important;
+    top: 45px !important;
+    background-color: white !important;
+    min-width: 220px !important;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2) !important;
+    border-radius: 8px !important;
+    z-index: 10000 !important;
+    padding: 10px 0 !important;
+    border: 1px solid #ddd !important;
+    display: none;
+}
+
+#userDropdownMenu.show {
+    display: block !important;
+}
+
+/* Éléments du menu */
+.custom-dropdown-item {
+    display: flex !important;
+    align-items: center !important;
+    padding: 10px 15px !important;
+    color: #333 !important;
+    text-decoration: none !important;
+    transition: background-color 0.2s !important;
+}
+
+.custom-dropdown-item:hover {
+    background-color: #f5f5f5 !important;
+    color: #3a4cb2 !important;
+    text-decoration: none !important;
+}
+
+.custom-dropdown-item i {
+    margin-right: 10px !important;
+    width: 20px !important;
+    text-align: center !important;
+}
+
+/* En-tête du profil */
+.dropdown-profile-header {
+    padding: 10px 15px !important;
+    display: flex !important;
+    align-items: center !important;
+    background: linear-gradient(135deg, #3a4cb2 0%, #4c8dd6 100%) !important;
+    border-radius: 8px 8px 0 0 !important;
+    margin-top: -10px !important;
+    margin-left: -1px !important;
+    margin-right: -1px !important;
+    width: calc(100% + 2px) !important;
+}
+
+.dropdown-avatar {
+    font-size: 24px !important;
+    margin-right: 10px !important;
+    color: white !important;
+}
+
+.dropdown-username {
+    color: white !important;
+    font-weight: bold !important;
+}
+
+.dropdown-role {
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: 12px !important;
+} 

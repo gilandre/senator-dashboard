@@ -1,12 +1,13 @@
 /**
- * Module JavaScript pour le tableau de bord d'assiduité
+ * Module JavaScript optimisé pour le tableau de bord d'assiduité
+ * Version avec optimisations de performance
  */
 
 document.addEventListener('DOMContentLoaded', function() {
-    // Vérifier si Chart.js est chargé
+    console.time('dashboard-init');
+    // Vérifier si Chart.js est chargé de façon optimisée
     if (typeof Chart === 'undefined') {
         console.error('Chart.js n\'est pas chargé!');
-        // Afficher un message d'erreur visible
         document.querySelectorAll('.chart-area').forEach(area => {
             area.innerHTML = '<div class="alert alert-danger">Erreur: Bibliothèque Chart.js non disponible</div>';
         });
@@ -15,60 +16,62 @@ document.addEventListener('DOMContentLoaded', function() {
     
     console.log('Dashboard.js chargé, Chart.js disponible:', typeof Chart);
     
-    const dateInput = document.getElementById('dashboardDate');
-    if (dateInput) {
-        // Récupération de la date la plus récente disponible dans la base de données
-        fetchLatestAvailableDate().then(latestDate => {
-            // Initialiser le datepicker avec la date la plus récente
-            dateInput.value = latestDate;
-            
-            // Chargement initial des données
-            loadDashboardData(latestDate);
-            
-            // Mettre à jour les liens de détail avec la date actuelle
-            updateDetailLinks(latestDate);
-        });
+    // Optimisation: Utiliser un seul écouteur d'événements pour tous les boutons
+    document.addEventListener('click', function(e) {
+        // Boutons de téléchargement
+        if (e.target.classList.contains('download-btn') || e.target.closest('.download-btn')) {
+            const btn = e.target.classList.contains('download-btn') ? e.target : e.target.closest('.download-btn');
+            const chartId = btn.getAttribute('data-chart-id');
+            const date = document.getElementById('dashboardDate').value;
+            downloadChartData(chartId, date);
+        }
         
-        // Gestion du changement de date
-        dateInput.addEventListener('change', function() {
-            loadDashboardData(this.value);
-            updateDetailLinks(this.value);
-        });
-    }
-    
-    // Gestion du bouton de rafraîchissement
-    const refreshBtn = document.getElementById('refreshDashboard');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
+        // Boutons d'information
+        if (e.target.classList.contains('info-btn') || e.target.closest('.info-btn')) {
+            const btn = e.target.classList.contains('info-btn') ? e.target : e.target.closest('.info-btn');
+            const chartId = btn.getAttribute('data-chart-id');
+            showChartInfo(chartId);
+        }
+        
+        // Bouton de rafraîchissement
+        if (e.target.id === 'refreshDashboard' || e.target.closest('#refreshDashboard')) {
             const date = document.getElementById('dashboardDate').value;
             loadDashboardData(date);
             updateDetailLinks(date);
+        }
+    });
+    
+    const dateInput = document.getElementById('dashboardDate');
+    if (dateInput) {
+        // Optimisation: Récupération de la date la plus récente via point d'entrée unique
+        fetchLatestAvailableDate().then(latestDate => {
+            dateInput.value = latestDate;
+            
+            // Chargement initial des données (une seule requête pour toutes les données)
+            loadDashboardData(latestDate);
+            updateDetailLinks(latestDate);
+        });
+        
+        // Gestion du changement de date (utilisation de events throttling pour limiter les appels)
+        let dateChangeTimeout;
+        dateInput.addEventListener('change', function() {
+            clearTimeout(dateChangeTimeout);
+            dateChangeTimeout = setTimeout(() => {
+                loadDashboardData(this.value);
+                updateDetailLinks(this.value);
+            }, 300); // Délai de 300ms pour éviter des appels multiples
         });
     }
     
-    // Initialisation des boutons de téléchargement
-    document.querySelectorAll('.download-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const chartId = this.getAttribute('data-chart-id');
-            const date = document.getElementById('dashboardDate').value;
-            downloadChartData(chartId, date);
-        });
+    // Initialiser le modal Bootstrap avec lazy initialization
+    let chartInfoModal;
+    document.getElementById('chartInfoModal')?.addEventListener('show.bs.modal', function() {
+        if (!chartInfoModal && typeof bootstrap !== 'undefined' && bootstrap.Modal) {
+            chartInfoModal = new bootstrap.Modal(this);
+        }
     });
     
-    // Initialisation des boutons d'information
-    document.querySelectorAll('.info-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const chartId = this.getAttribute('data-chart-id');
-            showChartInfo(chartId);
-        });
-    });
-    
-    // Initialiser le modal Bootstrap
-    if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-        window.chartInfoModal = new bootstrap.Modal(document.getElementById('chartInfoModal'));
-    } else {
-        console.warn('Bootstrap Modal n\'est pas disponible, certaines fonctionnalités seront limitées.');
-    }
+    console.timeEnd('dashboard-init');
 });
 
 /**
@@ -76,11 +79,18 @@ document.addEventListener('DOMContentLoaded', function() {
  * @param {string} date - Date au format YYYY-MM-DD
  */
 function updateDetailLinks(date) {
-    // Mise à jour des liens vers les rapports détaillés
-    document.getElementById('totalDetailLink').href = `/reports?type=attendance&metric=total&date=${date}`;
-    document.getElementById('onTimeDetailLink').href = `/reports?type=attendance&metric=ontime&date=${date}`;
-    document.getElementById('lateDetailLink').href = `/reports?type=attendance&metric=late&date=${date}`;
-    document.getElementById('hoursDetailLink').href = `/reports?type=attendance&metric=hours&date=${date}`;
+    // Optimisation: Mettre à jour tous les liens en une seule opération
+    const links = {
+        'totalDetailLink': `/reports?type=attendance&metric=total&date=${date}`,
+        'onTimeDetailLink': `/reports?type=attendance&metric=ontime&date=${date}`,
+        'lateDetailLink': `/reports?type=attendance&metric=late&date=${date}`,
+        'hoursDetailLink': `/reports?type=attendance&metric=hours&date=${date}`
+    };
+    
+    Object.entries(links).forEach(([id, href]) => {
+        const element = document.getElementById(id);
+        if (element) element.href = href;
+    });
     
     console.log('Liens de détail mis à jour pour la date:', date);
 }
@@ -90,11 +100,12 @@ function updateDetailLinks(date) {
  * @returns {Promise<string>} Date au format YYYY-MM-DD
  */
 function fetchLatestAvailableDate() {
-    return fetch('/dashboard/data?type=daily')
+    // Utiliser le point d'entrée consolidé
+    return fetch('/dashboard/all-data?action=getLatestDate')
         .then(response => response.json())
         .then(data => {
-            if (data && data.date) {
-                return data.date;
+            if (data && data.latestDate) {
+                return data.latestDate;
             }
             // Fallback à la date du jour si aucune date n'est trouvée
             return formatDate(new Date());
@@ -111,6 +122,7 @@ function fetchLatestAvailableDate() {
  * @param {string} date - Date au format YYYY-MM-DD
  */
 function loadDashboardData(date) {
+    console.time('dashboard-data-load');
     console.log('Chargement des données pour la date:', date);
     
     // Afficher les indicateurs de chargement
@@ -119,35 +131,52 @@ function loadDashboardData(date) {
     });
     
     // Utiliser le point d'entrée consolidé pour éviter les multiples requêtes API
-    fetch(`/dashboard/all-data?date=${date}`)
+    fetch(`/dashboard/all-data?date=${date}&_=${Date.now()}`) // Ajouter un timestamp pour éviter la mise en cache
         .then(response => response.json())
         .then(data => {
             // Traiter les données d'assiduité
             if (data.attendance) {
-                document.getElementById('totalCount').textContent = data.attendance.total;
-                document.getElementById('onTimeCount').textContent = data.attendance.onTime;
-                document.getElementById('lateCount').textContent = data.attendance.late;
-                document.getElementById('avgHoursValue').textContent = data.attendance.avgWorkingHours;
+                const elements = {
+                    'totalCount': data.attendance.total,
+                    'onTimeCount': data.attendance.onTime,
+                    'lateCount': data.attendance.late,
+                    'avgHoursValue': data.attendance.avgWorkingHours
+                };
+                
+                // Mettre à jour tous les éléments en une seule opération
+                Object.entries(elements).forEach(([id, value]) => {
+                    const element = document.getElementById(id);
+                    if (element) element.textContent = value;
+                });
             }
             
-            // Traiter la distribution des heures d'arrivée
-            if (data.arrivalDistribution) {
-                renderArrivalChart(data.arrivalDistribution);
-            }
-            
-            // Traiter la distribution des heures de départ
-            if (data.departureDistribution) {
-                renderDepartureChart(data.departureDistribution);
-            }
-            
-            // Traiter les données des heures de travail
-            if (data.workingHours) {
-                renderWorkingHoursChart(data.workingHours);
-            }
-            
-            // Masquer tous les indicateurs de chargement
-            document.querySelectorAll('.loading-spinner, .chart-spinner').forEach(spinner => {
-                spinner.style.display = 'none';
+            // Utiliser requestAnimationFrame pour le rendu des graphiques
+            // afin d'éviter de bloquer le thread principal
+            requestAnimationFrame(() => {
+                // Traiter la distribution des heures d'arrivée
+                if (data.arrivalDistribution) {
+                    renderArrivalChart(data.arrivalDistribution);
+                }
+                
+                requestAnimationFrame(() => {
+                    // Traiter la distribution des heures de départ
+                    if (data.departureDistribution) {
+                        renderDepartureChart(data.departureDistribution);
+                    }
+                    
+                    requestAnimationFrame(() => {
+                        // Traiter les données des heures de travail
+                        if (data.workingHours) {
+                            renderWorkingHoursChart(data.workingHours);
+                        }
+                        
+                        // Masquer tous les indicateurs de chargement
+                        document.querySelectorAll('.loading-spinner, .chart-spinner').forEach(spinner => {
+                            spinner.style.display = 'none';
+                        });
+                        console.timeEnd('dashboard-data-load');
+                    });
+                });
             });
         })
         .catch(error => {
@@ -156,22 +185,55 @@ function loadDashboardData(date) {
             document.querySelectorAll('.loading-spinner, .chart-spinner').forEach(spinner => {
                 spinner.style.display = 'none';
             });
+            console.timeEnd('dashboard-data-load');
         });
 }
 
 /**
- * Affiche le graphique des heures d'arrivée
+ * Affiche le graphique des heures d'arrivée avec options optimisées
  * @param {Object} chartData - Données du graphique
  */
 function renderArrivalChart(chartData) {
-    const ctx = document.getElementById('arrivalChart').getContext('2d');
+    const ctx = document.getElementById('arrivalChart')?.getContext('2d');
+    if (!ctx) return;
     
     // Détruire le graphique existant s'il y en a un
     if (window.arrivalChart instanceof Chart) {
         window.arrivalChart.destroy();
     }
     
-    // Créer le nouveau graphique
+    // Options optimisées pour de meilleures performances
+    const options = {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: {
+            duration: 500 // Réduire la durée d'animation pour de meilleures performances
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    precision: 0
+                }
+            }
+        },
+        plugins: {
+            title: {
+                display: true,
+                text: 'Distribution des heures d\'arrivée'
+            },
+            tooltip: {
+                enabled: true,
+                mode: 'index',
+                intersect: false
+            },
+            legend: {
+                display: false // Désactiver la légende pour de meilleures performances
+            }
+        }
+    };
+    
+    // Créer le nouveau graphique avec options optimisées
     window.arrivalChart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -184,27 +246,7 @@ function renderArrivalChart(chartData) {
                 borderWidth: 1
             }]
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        precision: 0
-                    }
-                }
-            },
-            plugins: {
-                title: {
-                    display: true,
-                    text: 'Distribution des heures d\'arrivée'
-                },
-                legend: {
-                    display: false
-                }
-            }
-        }
+        options: options
     });
 }
 

@@ -1,0 +1,6 @@
+Numero de badge,Date evenements,Heure evenements,Centrale,Groupe,Prenom,Nom,Statut
+12345,2023-03-01,08:30:00,Centrale1,Groupe1,Jean,Dupont,Entree
+12345,2023-03-01,17:30:00,Centrale1,Groupe1,Jean,Dupont,Sortie
+67890,2023-03-01,08:45:00,Centrale1,Groupe2,Marie,Martin,Entree
+67890,2023-03-01,17:15:00,Centrale1,Groupe2,Marie,Martin,Sortie
+54321,2023-03-01,09:00:00,Centrale2,Groupe3,Pierre,Durand,Entree 

@@ -1,0 +1,23 @@
+=== TEST D'IMPORTATION DIRECTE ===
+Date: 2025-04-11 13:29:03
+Fichier: E:\wampServer2\www\senator-dashboard/Exportation 1.csv
+
+Paramètres: separator=;, hasHeader=true
+
+=== ÉTAPE 1: LECTURE DU FICHIER CSV ===
+Lecture terminée en 0.01 secondes
+Nombre total de lignes: 1564
+En-têtes détectés: Numéro de badge, Date évènements, Heure évènements, Centrale, Lecteur, Nature Evenement, Nom, Prénom, Statut, Groupe, Date de début de validité, Date de création, 
+
+Exemple de données (3 premières lignes):
+Ligne 1: {"Numéro de badge":"563","Date évènements":"17\/09\/2024 07:44:41","Heure évènements":"07:44:41","Centrale":"LT 2ET 3EM","Lecteur":"LT 2EM","Nature Evenement":"Utilisateur inconnu","Nom":"","Prénom":"","Statut":"En service","Groupe":"SERVICES INFORMATIQUE","Date de début de validité":"17\/09\/2024 07:52:02","Date de création":"17\/09\/2024 07:51:57","":""}
+Ligne 2: {"Numéro de badge":"563","Date évènements":"17\/09\/2024 08:09:41","Heure évènements":"08:09:41","Centrale":"LT 2ET 3EM","Lecteur":"LT 3EME","Nature Evenement":"Utilisateur accepté","Nom":"","Prénom":"","Statut":"En service","Groupe":"SERVICES INFORMATIQUE","Date de début de validité":"17\/09\/2024 07:52:02","Date de création":"17\/09\/2024 07:51:57","":""}
+Ligne 3: {"Numéro de badge":"563","Date évènements":"17\/09\/2024 10:17:33","Heure évènements":"10:17:33","Centrale":"LT 2ET 3EM","Lecteur":"LT 2EM","Nature Evenement":"Utilisateur accepté","Nom":"KONATE","Prénom":"MARIAM","Statut":"En service","Groupe":"SERVICES INFORMATIQUE","Date de début de validité":"17\/09\/2024 07:52:02","Date de création":"17\/09\/2024 07:51:57","":""}
+
+=== ÉTAPE 2: VALIDATION DES DONNÉES ===
+Validation terminée en 0.01 secondes
+Erreurs: 0, Avertissements: 1576
+
+=== ÉTAPE 3: IMPORTATION DANS LA BASE DE DONNÉES ===
+Nombre d'enregistrements existants: 1564
+Utilisation de la méthode: importDataImproved

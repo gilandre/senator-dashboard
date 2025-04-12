@@ -62,16 +62,38 @@ document.addEventListener('DOMContentLoaded', function() {
     const userMenu = document.getElementById('userDropdownMenu');
     
     if (userBtn && userMenu) {
+        console.log("Menu utilisateur trouvé et initialisé");
+        
+        // Nettoyer les classes potentiellement conflictuelles
+        userMenu.classList.remove('hide', 'hidden', 'invisible');
+        
         userBtn.addEventListener('click', function(e) {
             e.preventDefault();
+            e.stopPropagation();
+            console.log("Clic sur le bouton utilisateur");
             userMenu.classList.toggle('show');
         });
         
         // Fermer le menu si on clique ailleurs
         document.addEventListener('click', function(e) {
-            if (!userBtn.contains(e.target) && !userMenu.contains(e.target)) {
+            if (userMenu.classList.contains('show') && !userBtn.contains(e.target) && !userMenu.contains(e.target)) {
+                console.log("Fermeture du menu utilisateur (clic extérieur)");
                 userMenu.classList.remove('show');
             }
+        });
+        
+        // S'assurer que le menu se ferme quand on clique sur un élément du menu
+        const menuItems = userMenu.querySelectorAll('.custom-dropdown-item');
+        menuItems.forEach(function(item) {
+            item.addEventListener('click', function() {
+                console.log("Clic sur un élément du menu utilisateur");
+                userMenu.classList.remove('show');
+            });
+        });
+    } else {
+        console.error("Menu utilisateur non trouvé", {
+            userBtn: userBtn ? "trouvé" : "non trouvé",
+            userMenu: userMenu ? "trouvé" : "non trouvé"
         });
     }
     

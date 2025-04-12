@@ -387,9 +387,6 @@ class ImportController extends Controller
             $result = $this->importData($data);
             error_log("ImportController::process - Résultat: " . print_r($result, true));
             
-            // Stocker les résultats en session pour la confirmation
-            $_SESSION['import_result'] = $result;
-            
             // Nettoyer les fichiers temporaires
             if (file_exists($fileInfo['path'])) {
                 @unlink($fileInfo['path']);
@@ -403,8 +400,31 @@ class ImportController extends Controller
                 unset($_SESSION['temp_uploads']);
             }
             
-            // Rediriger vers la page de confirmation
-            $this->redirect('/import/confirmation');
+            // Créer un message de succès avec les statistiques d'importation
+            $successMessage = "Importation réussie : {$result['imported']} enregistrements importés";
+            
+            if ($result['duplicates'] > 0) {
+                $successMessage .= ", {$result['duplicates']} doublons ignorés";
+            }
+            
+            if ($result['errors'] > 0) {
+                $successMessage .= ", {$result['errors']} erreurs rencontrées";
+            }
+            
+            $successMessage .= ".";
+            
+            // Enregistrer les statistiques pour affichage dans la page d'importation
+            $_SESSION['import_stats'] = [
+                'total' => $result['total'],
+                'imported' => $result['imported'],
+                'duplicates' => $result['duplicates'],
+                'errors' => $result['errors'],
+                'history_id' => $result['history_id'] ?? 0
+            ];
+            
+            // Rediriger directement vers la page d'importation avec un message de succès
+            $this->setFlash('success', $successMessage);
+            $this->redirect('/import');
             
         } catch (\Exception $e) {
             error_log("Erreur lors du traitement de l'importation: " . $e->getMessage());
@@ -451,24 +471,17 @@ class ImportController extends Controller
         
         error_log("ImportController: finish method called");
         
-        // Nettoyer toutes les données de session liées à l'importation
-        $sessionKeys = [
-            'import_data',
-            'validation',
-            'import_result',
-            'import_progress',
-            'import_message',
-            'duplicate_records'
-        ];
-        
-        foreach ($sessionKeys as $key) {
-            if (isset($_SESSION[$key])) {
-                unset($_SESSION[$key]);
-            }
+        // Nettoyer les statistiques d'importation
+        if (isset($_SESSION['import_stats'])) {
+            unset($_SESSION['import_stats']);
         }
         
-        // Rediriger vers la page d'importation avec un message de succès
-        $this->setFlash('success', 'L\'importation a été effectuée avec succès.');
+        // Nettoyer les doublons
+        if (isset($_SESSION['duplicate_records'])) {
+            unset($_SESSION['duplicate_records']);
+        }
+        
+        // Rediriger vers la page d'importation
         $this->redirect('/import');
     }
     
@@ -577,16 +590,16 @@ class ImportController extends Controller
         $tempDir = sys_get_temp_dir();
         $tempFile = $tempDir . '/import_' . uniqid() . '.csv';
         
-        // For testing purposes, always use copy
-        if (!copy($file['tmp_name'], $tempFile)) {
-            error_log("Failed to copy file from {$file['tmp_name']} to $tempFile");
-            throw new \RuntimeException('Impossible de copier le fichier temporaire');
+        // Utiliser move_uploaded_file au lieu de copy pour de meilleures performances
+        if (!move_uploaded_file($file['tmp_name'], $tempFile)) {
+            error_log("Failed to move file from {$file['tmp_name']} to $tempFile");
+            throw new \RuntimeException('Impossible de déplacer le fichier temporaire');
         }
         
-        // Verify the file was copied successfully
+        // Verify the file was moved successfully
         if (!file_exists($tempFile) || !is_readable($tempFile)) {
-            error_log("Temporary file not accessible after copy: $tempFile");
-            throw new \RuntimeException('Fichier temporaire non accessible après copie');
+            error_log("Temporary file not accessible after move: $tempFile");
+            throw new \RuntimeException('Fichier temporaire non accessible après déplacement');
         }
         
         return $tempFile;
@@ -597,7 +610,7 @@ class ImportController extends Controller
      */
     private function importData(array $data, bool $isAjaxRequest = false): array
     {
-        error_log("ImportDataWithProgressTracking: Début de l'importation");
+        // Suppression des logs excessifs
         
         // Initialiser les compteurs et tableaux pour le suivi
         $total = count($data);
@@ -608,7 +621,6 @@ class ImportController extends Controller
         
         // Vérifier si les données sont vides
         if ($total === 0) {
-            error_log("ImportDataWithProgressTracking: Aucune donnée à importer");
             return [
                 'total' => 0,
                 'imported' => 0,
@@ -623,27 +635,26 @@ class ImportController extends Controller
         $db->beginTransaction();
         
         try {
-            // Traiter les données par lots pour économiser la mémoire
-            $batchSize = 500; // Traiter par lots de 500 lignes
+            // Augmenter la taille des lots pour réduire les opérations
+            $batchSize = 1000; // Augmenté de 500 à 1000
             $batches = ceil($total / $batchSize);
             
-            // Préparer une structure pour stocker les doublons potentiels
+            // Charger les entrées existantes une seule fois au début
             $existingEntries = [];
             
-            // Récupérer les entrées récentes (des 30 derniers jours) pour vérifier les doublons efficacement
-            $thirtyDaysAgo = date('Y-m-d', strtotime('-30 days'));
+            // Période de vérification des doublons étendue à 60 jours
+            $sixtyDaysAgo = date('Y-m-d', strtotime('-60 days'));
             $query = "SELECT badge_number, event_date, event_time, event_type FROM access_logs 
-                     WHERE event_date >= :date_limit ORDER BY event_date DESC";
+                     WHERE event_date >= :date_limit";
             $stmt = $db->prepare($query);
-            $stmt->execute(['date_limit' => $thirtyDaysAgo]);
+            $stmt->execute(['date_limit' => $sixtyDaysAgo]);
             
             while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
                 $key = $row['badge_number'] . '|' . $row['event_date'] . '|' . $row['event_time'] . '|' . $row['event_type'];
                 $existingEntries[$key] = true;
             }
             
-            error_log("ImportData: " . count($existingEntries) . " entrées existantes chargées pour vérification des doublons");
-            
+            // Traitement par lots
             for ($batchIndex = 0; $batchIndex < $batches; $batchIndex++) {
                 $start = $batchIndex * $batchSize;
                 $end = min(($batchIndex + 1) * $batchSize, $total);
@@ -661,49 +672,60 @@ class ImportController extends Controller
                     $rowIndex = $start + $index;
                     
                     try {
-                        // Mettre à jour la progression
-                        $_SESSION['import_progress'] = (int)(($rowIndex + 1) / $total * 90);
-                        $_SESSION['import_message'] = 'Importation ' . ($rowIndex + 1) . ' sur ' . $total . '...';
+                        // Mise à jour de la progression seulement toutes les 100 lignes
+                        if ($rowIndex % 100 === 0) {
+                            $_SESSION['import_progress'] = (int)(($rowIndex + 1) / $total * 90);
+                            $_SESSION['import_message'] = 'Importation ' . ($rowIndex + 1) . ' sur ' . $total . '...';
+                        }
                         
-                        // Vérifier que les champs minimaux sont présents et non vides
+                        // Vérification minimale des champs obligatoires
                         if (empty($row['Numéro de badge'])) {
-                            error_log("ImportData: Numéro de badge manquant, ligne ignorée");
+                            error_log("Erreur: Numéro de badge manquant à la ligne " . ($rowIndex + 1));
                             $errors++;
                             continue;
                         }
                         
-                        // Gérer le cas où la date est vide
-                        $dateEvt = !empty($row['Date évènements']) ? $row['Date évènements'] : null;
-                        if (empty($dateEvt)) {
-                            error_log("ImportData: Date évènements manquante, ligne ignorée");
-                            $errors++;
-                            continue;
+                        // Récupération et formattage des données principales avec valeurs par défaut en cas de données manquantes
+                        $badgeNumber = $row['Numéro de badge'];
+                        
+                        // Gérer le cas où la date contient à la fois la date et l'heure
+                        $dateEvt = '';
+                        $heureEvt = '00:00:00';
+                        
+                        if (!empty($row['Date évènements'])) {
+                            $dateEvt = $row['Date évènements'];
+                            
+                            // Vérifier si la date contient également l'heure
+                            if (preg_match('/(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{1,2}:\d{1,2})/', $dateEvt, $matches)) {
+                                $dateEvt = $matches[1];
+                                $heureEvt = $matches[2];
+                            }
+                        } else {
+                            // Date par défaut si manquante (aujourd'hui)
+                            $dateEvt = date('d/m/Y');
+                            error_log("Avertissement: Date manquante à la ligne " . ($rowIndex + 1) . ", utilisation de la date du jour.");
                         }
                         
-                        // Gérer le cas où l'heure est vide - utiliser 00:00:00 comme heure par défaut
-                        $heureEvt = !empty($row['Heure évènements']) ? $row['Heure évènements'] : '00:00:00';
+                        // Si l'heure n'est pas extraite de la date, essayer de la récupérer du champ Heure
+                        if ($heureEvt === '00:00:00' && !empty($row['Heure évènements'])) {
+                            $heureEvt = $row['Heure évènements'];
+                        }
                         
-                        // Gérer le cas où la nature d'événement est vide
+                        // Nature d'évènement avec valeur par défaut
                         $eventType = !empty($row['Nature Evenement']) ? $row['Nature Evenement'] : 'Inconnu';
                         
-                        // Convertir la date et l'heure au format souhaité
+                        // Optimisation: formater la date et l'heure en une seule opération
                         list($formattedDate, $formattedTime) = $this->formatDateTime($dateEvt, $heureEvt);
                         
-                        // Vérifier si un enregistrement similaire existe déjà
-                        $entryKey = $row['Numéro de badge'] . '|' . $formattedDate . '|' . $formattedTime . '|' . $eventType;
-                        $isDuplicate = isset($existingEntries[$entryKey]);
-                        
-                        if (!$isDuplicate) {
-                            $isDuplicate = $this->isDuplicate($row['Numéro de badge'], $formattedDate, $formattedTime, $eventType);
-                        }
-                        
-                        if ($isDuplicate) {
-                            error_log("ImportData: Doublon détecté pour badge " . $row['Numéro de badge'] . " à la date " . $formattedDate);
+                        // Vérification de doublon - d'abord en mémoire
+                        $entryKey = $badgeNumber . '|' . $formattedDate . '|' . $formattedTime . '|' . $eventType;
+                        if (isset($existingEntries[$entryKey])) {
                             $duplicates++;
                             
+                            // Stockage des informations de doublon
                             $duplicateRecords[] = [
                                 'row_id' => $rowIndex + 1,
-                                'badge_number' => $row['Numéro de badge'],
+                                'badge_number' => $badgeNumber,
                                 'date' => $formattedDate,
                                 'time' => $formattedTime,
                                 'event_type' => $eventType
@@ -712,31 +734,36 @@ class ImportController extends Controller
                             continue;
                         }
                         
+                        // Marquer comme existant pour les prochaines vérifications
                         $existingEntries[$entryKey] = true;
                         
+                        // Préparation de l'enregistrement pour insertion
                         $recordsToInsert[] = [
                             'event_date' => $formattedDate,
                             'event_time' => $formattedTime,
-                            'badge_number' => $row['Numéro de badge'],
+                            'badge_number' => $badgeNumber,
                             'event_type' => $eventType,
                             'central' => !empty($row['Centrale']) ? $row['Centrale'] : null,
-                            'group_name' => !empty($row['Groupe']) ? $row['Groupe'] : null
+                            'group_name' => !empty($row['Groupe']) ? $row['Groupe'] : null,
+                            'first_name' => !empty($row['Prénom']) ? $row['Prénom'] : null,
+                            'last_name' => !empty($row['Nom']) ? $row['Nom'] : null,
+                            'status' => !empty($row['Statut']) ? $row['Statut'] : null,
+                            'created_at' => date('Y-m-d H:i:s')
                         ];
                         
                     } catch (\Exception $e) {
-                        error_log("Erreur lors de l'importation d'une ligne: " . $e->getMessage());
+                        error_log("Erreur durant le traitement de la ligne " . ($rowIndex + 1) . ": " . $e->getMessage());
                         $errors++;
                     }
                 }
                 
-                // Effectuer l'insertion en lot si des enregistrements ont été préparés
+                // Effectuer l'insertion en lot
                 if (!empty($recordsToInsert)) {
                     try {
                         $insertedCount = $this->batchInsertAccessLogs($recordsToInsert);
                         $imported += $insertedCount;
-                        error_log("ImportData: $insertedCount enregistrements insérés avec succès en lot");
                     } catch (\Exception $e) {
-                        error_log("ImportData: Erreur lors de l'insertion en lot: " . $e->getMessage());
+                        error_log("Erreur d'insertion en lot: " . $e->getMessage());
                         throw $e; // Propager l'erreur pour gérer la transaction
                     }
                 }
@@ -756,6 +783,7 @@ class ImportController extends Controller
             } catch (\Exception $e) {
                 error_log("ImportData: Erreur lors de la création de l'historique: " . $e->getMessage());
                 // Non bloquant, on continue même en cas d'erreur
+                $historyId = 0;
             }
             
             // Stocker les doublons en session
@@ -772,22 +800,59 @@ class ImportController extends Controller
             unset($existingEntries);
             gc_collect_cycles();
             
-            error_log("ImportDataWithProgressTracking: Fin de l'importation - $imported importés, $duplicates doublons, $errors erreurs");
-            
             return [
                 'total' => $total,
                 'imported' => $imported,
                 'duplicates' => $duplicates,
                 'errors' => $errors,
-                'async' => $isAjaxRequest
+                'async' => $isAjaxRequest,
+                'history_id' => $historyId
             ];
             
         } catch (\Exception $e) {
             // En cas d'erreur, annuler la transaction
             $db->rollBack();
-            error_log("ImportDataWithProgressTracking: Erreur lors de l'importation - " . $e->getMessage());
+            error_log("Erreur critique pendant l'importation: " . $e->getMessage());
             throw $e;
         }
+    }
+    
+    /**
+     * Formate une date pour la base de données, quelle que soit son format initial
+     */
+    private function formatDate($date)
+    {
+        if (empty($date)) {
+            return null;
+        }
+        
+        // Vérifier si la date contient l'heure
+        if (preg_match('/(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{1,2}:\d{1,2})/', $date, $matches)) {
+            $date = $matches[1];
+        }
+        
+        // Essayer de convertir au format Y-m-d
+        try {
+            // Formats communs
+            $formats = ['d/m/Y', 'd-m-Y', 'Y-m-d', 'd.m.Y'];
+            
+            foreach ($formats as $format) {
+                $dateObj = \DateTime::createFromFormat($format, $date);
+                if ($dateObj && $dateObj->format($format) === $date) {
+                    return $dateObj->format('Y-m-d');
+                }
+            }
+            
+            // Dernier recours avec strtotime
+            $timestamp = strtotime($date);
+            if ($timestamp !== false) {
+                return date('Y-m-d', $timestamp);
+            }
+        } catch (\Exception $e) {
+            error_log("Erreur de conversion de date '{$date}': " . $e->getMessage());
+        }
+        
+        return null;
     }
     
     /**
@@ -944,65 +1009,88 @@ class ImportController extends Controller
     }
     
     /**
-     * Valide et combine la date et l'heure
+     * Formate la date et l'heure pour l'insertion dans la base de données
+     * Version optimisée pour de meilleures performances
      */
-    private function validateDateTime(string $date, string $time): string
+    private function formatDateTime($date, $time): array
     {
-        // Vérifier si la date contient déjà une heure
-        if (preg_match('/(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\s+(\d{1,2}:\d{1,2}(:\d{1,2})?)/', $date, $matches)) {
-            // La date contient déjà une heure, utiliser directement pour la conversion
-            $dateStr = $matches[1];
-            $timeStr = $matches[2];
-            
-            $dateFormats = ['d/m/Y', 'Y-m-d', 'd-m-Y'];
-            foreach ($dateFormats as $format) {
-                $dateObj = \DateTime::createFromFormat($format . ' H:i:s', $dateStr . ' ' . $timeStr);
-                if ($dateObj) {
-                    return $dateObj->format('Y-m-d H:i:s');
-                }
-            }
+        // Gérer le cas où date est NULL ou vide
+        if (empty($date)) {
+            return [date('Y-m-d'), '00:00:00'];
         }
         
-        // Convertir les formats de date possibles en Y-m-d
-        $dateFormats = ['d/m/Y', 'Y-m-d', 'd-m-Y'];
-        $validDate = null;
+        // Nettoyer la date (supprimer les caractères non essentiels)
+        $date = trim($date);
         
-        foreach ($dateFormats as $format) {
-            $dateObj = \DateTime::createFromFormat($format, $date);
-            if ($dateObj && $dateObj->format($format) === $date) {
-                $validDate = $dateObj->format('Y-m-d');
-                break;
-            }
+        // Format le plus courant d'abord - optimisation pour le cas le plus fréquent
+        if (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $date, $matches)) {
+            // Format dd/mm/yyyy - le plus courant
+            return ["{$matches[3]}-{$matches[2]}-{$matches[1]}", $this->formatTime($time)];
         }
         
-        if ($validDate === null) {
-            throw new \RuntimeException("Format de date invalide: {$date}");
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $date, $matches)) {
+            // Format yyyy-mm-dd - déjà correct
+            return [$date, $this->formatTime($time)];
         }
         
-        // Si l'heure est vide, utiliser minuit
-        if (empty(trim($time))) {
-            return $validDate . ' 00:00:00';
+        if (preg_match('/^(\d{2})-(\d{2})-(\d{4})$/', $date, $matches)) {
+            // Format dd-mm-yyyy
+            return ["{$matches[3]}-{$matches[2]}-{$matches[1]}", $this->formatTime($time)];
         }
         
-        // Normaliser le format de l'heure en H:i:s
-        $timeFormats = ['H:i:s', 'H:i'];
-        $validTime = null;
-        
-        foreach ($timeFormats as $format) {
-            $timeObj = \DateTime::createFromFormat($format, $time);
-            if ($timeObj && $timeObj->format($format) === $time) {
-                $validTime = $timeObj->format('H:i:s');
-                break;
-            }
+        if (preg_match('/^(\d{2})\.(\d{2})\.(\d{4})$/', $date, $matches)) {
+            // Format dd.mm.yyyy
+            return ["{$matches[3]}-{$matches[2]}-{$matches[1]}", $this->formatTime($time)];
         }
         
-        if ($validTime === null) {
-            // Si l'heure est invalide, utiliser minuit plutôt que de lancer une exception
-            error_log("Format d'heure invalide: '{$time}', utilisation de 00:00:00 par défaut");
-            $validTime = '00:00:00';
+        // Dernier recours - utiliser strtotime
+        $timestamp = strtotime($date);
+        if ($timestamp !== false) {
+            return [date('Y-m-d', $timestamp), $this->formatTime($time)];
         }
         
-        return $validDate . ' ' . $validTime;
+        // Si tout échoue, retourner la date du jour
+        return [date('Y-m-d'), $this->formatTime($time)];
+    }
+    
+    /**
+     * Formate l'heure en format H:i:s
+     * Méthode plus simple et plus rapide pour le formatage du temps
+     */
+    private function formatTime($time): string
+    {
+        if (empty($time)) {
+            return '00:00:00';
+        }
+        
+        // Nettoyer l'heure (garder uniquement les chiffres et les :)
+        $time = trim($time);
+        
+        // Format H:i:s déjà correct
+        if (preg_match('/^(\d{2}):(\d{2}):(\d{2})$/', $time)) {
+            return $time;
+        }
+        
+        // Format H:i sans secondes
+        if (preg_match('/^(\d{2}):(\d{2})$/', $time)) {
+            return $time . ':00';
+        }
+        
+        // Reconstituer à partir de composants (hh:mm) séparés par divers caractères
+        if (preg_match('/^(\d{1,2})[^0-9]+(\d{1,2})/', $time, $matches)) {
+            $hours = min(23, max(0, intval($matches[1])));
+            $minutes = min(59, max(0, intval($matches[2])));
+            return sprintf('%02d:%02d:00', $hours, $minutes);
+        }
+        
+        // Dernier recours - strtotime
+        $timestamp = strtotime($time);
+        if ($timestamp !== false) {
+            return date('H:i:s', $timestamp);
+        }
+        
+        // Valeur par défaut
+        return '00:00:00';
     }
     
     /**
@@ -1057,8 +1145,14 @@ class ImportController extends Controller
             $accessLog->event_time = $eventTime;
             $accessLog->badge_number = $data['badge_id'];
             $accessLog->event_type = $eventType;
-            $accessLog->central = $data['controller'] ?? null;    // Transformé de controller à central
-            $accessLog->group_name = $data['group'] ?? null;      // Transformé de group à group_name
+            $accessLog->central = $data['controller'] ?? null;    // Nom de colonne correct: central
+            $accessLog->group_name = $data['group'] ?? null;      // Nom de colonne correct: group_name
+            
+            // Assigner les nouveaux champs qui existent dans la base de données
+            $accessLog->first_name = $data['first_name'] ?? null;
+            $accessLog->last_name = $data['last_name'] ?? null;
+            $accessLog->status = $data['status'] ?? null;
+            $accessLog->created_at = date('Y-m-d H:i:s');
             
             // Insérer l'enregistrement
             $result = $accessLog->insert();
@@ -1081,95 +1175,7 @@ class ImportController extends Controller
     }
     
     /**
-     * Formate la date et l'heure pour l'insertion dans la base de données
-     */
-    private function formatDateTime($date, $time): array
-    {
-        // Gérer le cas où date est NULL ou vide
-        if (empty($date)) {
-            error_log("ImportController::formatDateTime - Date vide, utilisation de la date du jour");
-            return [date('Y-m-d'), '00:00:00'];
-        }
-        
-        // Convertir les formats de date possibles en Y-m-d
-        $dateFormats = ['d/m/Y', 'Y-m-d', 'd-m-Y', 'Y/m/d', 'd.m.Y'];
-        $validDate = null;
-        
-        // Nettoyer la date (supprimer les caractères non numériques sauf les séparateurs)
-        $date = trim($date);
-        
-        foreach ($dateFormats as $format) {
-            $dateObj = \DateTime::createFromFormat($format, $date);
-            if ($dateObj && $dateObj->format($format) === $date) {
-                $validDate = $dateObj->format('Y-m-d');
-                break;
-            }
-        }
-        
-        // Si aucun format ne correspond, essayer de détecter et convertir
-        if ($validDate === null) {
-            // Essayer de détecter le format automatiquement
-            try {
-                $dateObj = new \DateTime($date);
-                $validDate = $dateObj->format('Y-m-d');
-                error_log("ImportController::formatDateTime - Format de date détecté automatiquement pour: " . $date);
-            } catch (\Exception $e) {
-                error_log("ImportController::formatDateTime - Format de date invalide: " . $date . ", utilisation de la date du jour");
-                $validDate = date('Y-m-d');
-            }
-        }
-        
-        // Valider et formater l'heure (permettre NULL ou vide)
-        $validTime = "00:00:00"; // Valeur par défaut
-        if (!empty($time)) {
-            $timeFormats = ['H:i:s', 'H:i', 'h:i:s A', 'h:i A'];
-            foreach ($timeFormats as $format) {
-                $timeObj = \DateTime::createFromFormat($format, $time);
-                if ($timeObj && $timeObj->format($format) === $time) {
-                    $validTime = $timeObj->format('H:i:s');
-                    break;
-                }
-            }
-            
-            // Si aucun format ne correspond, essayer de nettoyer et reformater
-            if ($validTime === "00:00:00" && $time !== "00:00:00") {
-                // Nettoyer l'heure (garder uniquement les chiffres et les :)
-                $cleanTime = preg_replace('/[^0-9:]/', '', $time);
-                
-                // Essayer différents formats après nettoyage
-                foreach ($timeFormats as $format) {
-                    $timeObj = \DateTime::createFromFormat($format, $cleanTime);
-                    if ($timeObj) {
-                        $validTime = $timeObj->format('H:i:s');
-                        error_log("ImportController::formatDateTime - Heure nettoyée et reformatée: " . $time . " -> " . $validTime);
-                        break;
-                    }
-                }
-                
-                // Si toujours pas de correspondance, essayer de détecter le format automatiquement
-                if ($validTime === "00:00:00" && $time !== "00:00:00") {
-                    try {
-                        $parts = explode(':', $cleanTime);
-                        if (count($parts) >= 2) {
-                            $hours = min(23, max(0, intval($parts[0])));
-                            $minutes = min(59, max(0, intval($parts[1])));
-                            $seconds = isset($parts[2]) ? min(59, max(0, intval($parts[2]))) : 0;
-                            $validTime = sprintf('%02d:%02d:%02d', $hours, $minutes, $seconds);
-                            error_log("ImportController::formatDateTime - Heure reconstituée manuellement: " . $time . " -> " . $validTime);
-                        }
-                    } catch (\Exception $e) {
-                        error_log("ImportController::formatDateTime - Format d'heure invalide après nettoyage: " . $time . ", utilisation de 00:00:00");
-                    }
-                }
-            }
-        }
-        
-        return [$validDate, $validTime];
-    }
-    
-    /**
-     * Vérifie si un enregistrement est un doublon
-     * 
+     * Vérifie si un enregistrement avec les mêmes caractéristiques existe déjà
      * @param string $badgeNumber Numéro de badge
      * @param string $eventDate Date de l'événement
      * @param string|null $eventTime Heure de l'événement (optionnel)
@@ -1178,39 +1184,56 @@ class ImportController extends Controller
      */
     private function isDuplicate(string $badgeNumber, string $eventDate, ?string $eventTime = null, ?string $eventType = null): bool
     {
+        static $tableChecked = false;
+        
         try {
-            // Log pour le débogage
-            error_log("isDuplicate: Vérification pour badge=$badgeNumber, date=$eventDate" . 
-                     ($eventTime ? ", time=$eventTime" : "") . 
-                     ($eventType ? ", type=$eventType" : ""));
+            // Vérifier l'existence de la table une seule fois par session
+            if (!$tableChecked) {
+                try {
+                    $tables = $this->db->fetchAll("SHOW TABLES");
+                    $tableExists = false;
+                    
+                    foreach ($tables as $table) {
+                        if (in_array('access_logs', $table)) {
+                            $tableExists = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!$tableExists) {
+                        $tableChecked = true;
+                        return false;
+                    }
+                    
+                    $tableChecked = true;
+                } catch (\Exception $e) {
+                    error_log("isDuplicate: Erreur lors de la vérification de la table - " . $e->getMessage());
+                    return false;
+                }
+            }
             
-            // Construire la requête SQL de base
-            $sql = "SELECT COUNT(*) FROM access_logs WHERE badge_number = ? AND event_date = ?";
+            // Construire la requête SQL optimisée pour utiliser COUNT(*) 
+            // plutôt que de récupérer tous les champs
+            $sql = "SELECT COUNT(*) as count FROM access_logs WHERE badge_number = ? AND event_date = ?";
             $params = [$badgeNumber, $eventDate];
             
-            // Ajouter l'heure si elle est fournie
             if ($eventTime !== null) {
                 $sql .= " AND event_time = ?";
                 $params[] = $eventTime;
             }
             
-            // Ajouter le type d'événement s'il est fourni
             if ($eventType !== null) {
                 $sql .= " AND event_type = ?";
                 $params[] = $eventType;
             }
             
-            // Exécuter la requête
-            $stmt = $this->db->query($sql, $params);
-            $count = $stmt->fetchColumn();
+            // Exécuter la requête de manière optimisée
+            $result = $this->db->fetchOne($sql, $params);
+            $isDuplicate = isset($result['count']) && $result['count'] > 0;
             
-            // Log du résultat
-            error_log("isDuplicate: Résultat = " . ($count > 0 ? "Oui (doublon trouvé)" : "Non (pas de doublon)"));
-            
-            return $count > 0;
+            return $isDuplicate;
         } catch (\Exception $e) {
-            // En cas d'erreur, log et retourner false pour continuer l'importation
-            error_log("isDuplicate: Erreur lors de la vérification - " . $e->getMessage());
+            error_log("isDuplicate: Erreur - " . $e->getMessage());
             return false;
         }
     }
@@ -1286,7 +1309,11 @@ class ImportController extends Controller
                     'badge_id' => $row['Numéro de badge'],
                     'event_type' => $eventType,
                     'controller' => !empty($row['Centrale']) ? $row['Centrale'] : null,
-                    'group' => !empty($row['Groupe']) ? $row['Groupe'] : null
+                    'group' => !empty($row['Groupe']) ? $row['Groupe'] : null,
+                    'first_name' => !empty($row['Prénom']) ? $row['Prénom'] : null,
+                    'last_name' => !empty($row['Nom']) ? $row['Nom'] : null,
+                    'status' => !empty($row['Statut']) ? $row['Statut'] : null,
+                    'created_at' => date('Y-m-d H:i:s')
                 ]);
                 
                 $result['imported']++;
@@ -1364,7 +1391,7 @@ class ImportController extends Controller
 
     /**
      * Effectue une insertion en lot des enregistrements d'accès
-     * Cette méthode est beaucoup plus efficace pour les grandes quantités de données
+     * Version optimisée utilisant la méthode batchInsert de Database
      */
     private function batchInsertAccessLogs(array $records): int
     {
@@ -1372,43 +1399,73 @@ class ImportController extends Controller
             return 0;
         }
         
-        $db = $this->db->getConnection();
-        
-        // Commencer une transaction pour optimiser les performances
-        $db->beginTransaction();
+        // Obtenir l'instance de Database et démarrer une transaction
+        $db = \App\Core\Database::getInstance();
         
         try {
-            // Préparer la requête d'insertion
-            $stmt = $db->prepare("
-                INSERT INTO access_logs 
-                (event_date, event_time, badge_number, event_type, central, group_name) 
-                VALUES 
-                (:event_date, :event_time, :badge_number, :event_type, :central, :group_name)
-            ");
+            // Transformer les enregistrements pour les adapter au format attendu par batchInsert
+            $columns = [
+                'event_date', 'event_time', 'badge_number', 'event_type', 
+                'central', 'group_name', 'first_name', 'last_name', 
+                'status', 'created_at'
+            ];
             
-            // Compteur pour les insertions réussies
-            $insertCount = 0;
-            
-            // Exécuter l'insertion pour chaque enregistrement
+            $valuesBatch = [];
             foreach ($records as $record) {
-                $stmt->bindValue(':event_date', $record['event_date']);
-                $stmt->bindValue(':event_time', $record['event_time']);
-                $stmt->bindValue(':badge_number', $record['badge_number']);
-                $stmt->bindValue(':event_type', $record['event_type']);
-                $stmt->bindValue(':central', $record['central']);
-                $stmt->bindValue(':group_name', $record['group_name']);
-                
-                $stmt->execute();
-                $insertCount++;
+                $values = [
+                    $record['event_date'],
+                    $record['event_time'],
+                    $record['badge_number'],
+                    $record['event_type'],
+                    $record['central'] ?? null,
+                    $record['group_name'] ?? null,
+                    $record['first_name'] ?? null,
+                    $record['last_name'] ?? null,
+                    $record['status'] ?? null,
+                    $record['created_at'] ?? date('Y-m-d H:i:s')
+                ];
+                $valuesBatch[] = $values;
             }
             
-            // Valider la transaction
-            $db->commit();
+            // Utiliser la nouvelle méthode d'insertion en lot
+            $insertedCount = $db->batchInsert('access_logs', $columns, $valuesBatch);
             
-            return $insertCount;
-        } catch (\Exception $e) {
-            // Annuler la transaction en cas d'erreur
-            $db->rollBack();
+            error_log("Insertion en lot réussie: $insertedCount enregistrements insérés sur " . count($records) . " tentés");
+            return $insertedCount;
+            
+        } catch (\PDOException $e) {
+            error_log("Erreur lors de l'insertion en lot: " . $e->getMessage());
+            
+            // Si l'erreur est liée à une colonne inconnue, réessayer avec les colonnes minimales
+            if (strpos($e->getMessage(), 'Unknown column') !== false) {
+                error_log("Tentative d'insertion avec les colonnes minimales");
+                
+                try {
+                    $minColumns = ['event_date', 'event_time', 'badge_number', 'event_type', 'central', 'group_name'];
+                    
+                    $minValuesBatch = [];
+                    foreach ($records as $record) {
+                        $values = [
+                            $record['event_date'],
+                            $record['event_time'],
+                            $record['badge_number'],
+                            $record['event_type'],
+                            $record['central'] ?? null,
+                            $record['group_name'] ?? null
+                        ];
+                        $minValuesBatch[] = $values;
+                    }
+                    
+                    $insertedCount = $db->batchInsert('access_logs', $minColumns, $minValuesBatch);
+                    
+                    error_log("Insertion en lot réussie avec les colonnes minimales: $insertedCount enregistrements insérés");
+                    return $insertedCount;
+                } catch (\Exception $fallbackError) {
+                    error_log("Échec de l'insertion minimale: " . $fallbackError->getMessage());
+                    throw $fallbackError;
+                }
+            }
+            
             throw $e;
         }
     }
@@ -1529,5 +1586,82 @@ class ImportController extends Controller
             $this->setFlash('error', 'Erreur lors de la lecture du fichier: ' . $e->getMessage());
             $this->redirect('/import');
         }
+    }
+
+    /**
+     * Route de diagnostic pour afficher les informations utiles à l'optimisation
+     * Accessible uniquement pour les administrateurs
+     */
+    public function diagnosticPerformance()
+    {
+        // S'assurer que l'utilisateur est un administrateur
+        $this->requireAdmin();
+        
+        $diagnostics = [
+            'memory_limit' => ini_get('memory_limit'),
+            'max_execution_time' => ini_get('max_execution_time'),
+            'post_max_size' => ini_get('post_max_size'),
+            'upload_max_filesize' => ini_get('upload_max_filesize'),
+            'max_input_time' => ini_get('max_input_time'),
+            'memory_usage' => $this->formatBytes(memory_get_usage(true)),
+            'temp_directory' => sys_get_temp_dir(),
+            'database_config' => [
+                'pdo_attributes' => $this->getPDOAttributes()
+            ],
+            'file_upload_recommendations' => [
+                'memory_limit' => '512M (minimum recommandé)',
+                'max_execution_time' => '300 (minimum recommandé)',
+                'post_max_size' => '64M (minimum recommandé)',
+                'upload_max_filesize' => '64M (minimum recommandé)'
+            ],
+            'optimisation_suggestions' => [
+                'Augmenter memory_limit dans php.ini à au moins 512M',
+                'Augmenter max_execution_time dans php.ini à au moins 300 secondes',
+                'Éviter d\'importer plus de 10,000 lignes à la fois',
+                'Utiliser le format CSV avec le séparateur ";" (point-virgule)',
+                'S\'assurer que chaque ligne a un numéro de badge et une date d\'événement',
+                'Nettoyez les données CSV avant importation pour éviter les erreurs'
+            ]
+        ];
+        
+        $this->view('admin/diagnostics', [
+            'title' => 'Diagnostic de performance d\'importation',
+            'diagnostics' => $diagnostics
+        ]);
+    }
+    
+    /**
+     * Récupère les attributs de la connexion PDO
+     */
+    private function getPDOAttributes(): array
+    {
+        $attributes = [];
+        $pdo = $this->db->getConnection();
+        
+        try {
+            $attributes['ATTR_AUTOCOMMIT'] = $pdo->getAttribute(\PDO::ATTR_AUTOCOMMIT);
+            $attributes['ATTR_PERSISTENT'] = $pdo->getAttribute(\PDO::ATTR_PERSISTENT);
+            $attributes['ATTR_TIMEOUT'] = $pdo->getAttribute(\PDO::ATTR_TIMEOUT);
+        } catch (\Exception $e) {
+            // Ignorer les erreurs
+        }
+        
+        return $attributes;
+    }
+    
+    /**
+     * Formate les octets en une chaîne lisible
+     */
+    private function formatBytes($bytes, $precision = 2): string
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        
+        $bytes = max($bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+        
+        $bytes /= (1 << (10 * $pow));
+        
+        return round($bytes, $precision) . ' ' . $units[$pow];
     }
 } 

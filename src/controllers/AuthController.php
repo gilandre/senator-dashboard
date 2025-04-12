@@ -47,37 +47,82 @@ class AuthController extends Controller
         $password = $_POST['password'] ?? '';
         $remember = isset($_POST['remember']);
         $csrfToken = $_POST['csrf_token'] ?? '';
+        
+        // Créer un fichier de log dans un dossier accessible en écriture
+        $logFile = __DIR__ . '/../../auth_debug.log';
+        file_put_contents($logFile, "=== TENTATIVE DE CONNEXION ===\n", FILE_APPEND);
+        file_put_contents($logFile, "Date: " . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Username: {$username}\n", FILE_APPEND);
+        file_put_contents($logFile, "Password: [masqué]\n", FILE_APPEND);
+        file_put_contents($logFile, "Session ID: " . session_id() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Session status: " . session_status() . "\n", FILE_APPEND);
+        file_put_contents($logFile, "Session data: " . print_r($_SESSION, true) . "\n", FILE_APPEND);
+        file_put_contents($logFile, "CSRF Token (POST): {$csrfToken}\n", FILE_APPEND);
+        file_put_contents($logFile, "CSRF Token (SESSION): " . ($_SESSION['csrf_token'] ?? 'non défini') . "\n", FILE_APPEND);
 
         try {
-            error_log("Tentative de connexion avec: " . $username);
+            // Connexion directe à la base de données pour vérifier l'utilisateur
+            $pdo = new \PDO('mysql:host=localhost;dbname=senator_db', 'root', '');
+            $pdo->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
             
-            // Validate CSRF token
-            if (!isset($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrfToken)) {
-                error_log("CSRF token validation failed. Expected: " . ($_SESSION['csrf_token'] ?? 'not set') . ", Got: " . $csrfToken);
-                $_SESSION['flash_error'] = 'Invalid CSRF token';
-                header('Location: /login');
-                exit;
-            }
+            // Vérification de l'utilisateur
+            $stmt = $pdo->prepare("SELECT * FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            $user = $stmt->fetch(\PDO::FETCH_ASSOC);
             
-            // Authentification avec le nom d'utilisateur
-            if ($this->auth->login($username, $password)) {
-                error_log("Authentification réussie pour l'utilisateur: " . $this->auth->getUserId());
-                
-                if ($remember) {
-                    $token = $this->authService->generateRememberToken($this->auth->getUserId());
-                    setcookie('remember_token', $token, time() + (30 * 24 * 60 * 60), '/', '', true, true);
-                }
-                
-                header('Location: /dashboard');
-                exit;
-            } else {
-                error_log("Authentification échouée pour: " . $username);
+            if (!$user) {
+                file_put_contents($logFile, "ERREUR: Utilisateur '{$username}' non trouvé dans la base de données\n", FILE_APPEND);
                 $_SESSION['flash_error'] = 'Identifiants incorrects';
                 header('Location: /login');
                 exit;
             }
-        } catch (Exception $e) {
-            error_log("Erreur lors de la connexion : " . $e->getMessage());
+            
+            file_put_contents($logFile, "Utilisateur trouvé: ID = {$user['id']}\n", FILE_APPEND);
+            
+            // Vérification du mot de passe
+            if (!password_verify($password, $user['password'])) {
+                file_put_contents($logFile, "ERREUR: Mot de passe incorrect\n", FILE_APPEND);
+                $_SESSION['flash_error'] = 'Identifiants incorrects';
+                header('Location: /login');
+                exit;
+            }
+            
+            file_put_contents($logFile, "Mot de passe vérifié avec succès\n", FILE_APPEND);
+            
+            // Vérification de l'état du compte
+            if (!$user['is_active']) {
+                file_put_contents($logFile, "ERREUR: Compte utilisateur inactif\n", FILE_APPEND);
+                $_SESSION['flash_error'] = 'Ce compte est inactif';
+                header('Location: /login');
+                exit;
+            }
+            
+            // Configuration de la session
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['username'] = $user['username'];
+            $_SESSION['role'] = $user['role'];
+            
+            file_put_contents($logFile, "Session après authentification: " . print_r($_SESSION, true) . "\n", FILE_APPEND);
+            
+            // Gestion du remember me
+            if ($remember) {
+                $token = bin2hex(random_bytes(32));
+                $expiry = time() + (30 * 24 * 60 * 60); // 30 jours
+                
+                $stmt = $pdo->prepare("INSERT INTO remember_tokens (user_id, token, expires_at) VALUES (?, ?, ?)");
+                $stmt->execute([$user['id'], $token, date('Y-m-d H:i:s', $expiry)]);
+                
+                setcookie('remember_token', $token, $expiry, '/', '', false, true);
+                file_put_contents($logFile, "Cookie 'remember_token' créé\n", FILE_APPEND);
+            }
+            
+            file_put_contents($logFile, "Authentification réussie - Redirection vers /dashboard\n", FILE_APPEND);
+            header('Location: /dashboard');
+            exit;
+            
+        } catch (\Exception $e) {
+            file_put_contents($logFile, "EXCEPTION: " . $e->getMessage() . "\n", FILE_APPEND);
+            file_put_contents($logFile, "Trace: " . $e->getTraceAsString() . "\n", FILE_APPEND);
             $_SESSION['flash_error'] = 'Une erreur est survenue lors de la connexion';
             header('Location: /login');
             exit;

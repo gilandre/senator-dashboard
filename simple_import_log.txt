@@ -1,0 +1,15 @@
+=== TEST SIMPLE D'IMPORTATION ===
+Date: 2025-04-11 14:55:23
+
+Lecture du fichier CSV...
+Nombre de lignes lues: 0
+Enregistrements existants: 0
+Début d'importation...
+
+=== RÉSULTATS ===
+Durée: 0 secondes
+Lignes lues: 0
+Insérées: 0
+Doublons: 0
+Erreurs: 0
+Nouveaux enregistrements (réels): 0

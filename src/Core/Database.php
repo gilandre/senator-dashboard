@@ -11,6 +11,16 @@ class Database
     private static $instance = null;
     private $connection;
 
+    /**
+     * Cache simple pour les requêtes fréquentes
+     * Utilisation : uniquement pour le développement
+     */
+    private static $queryCache = [];
+    private static $cacheEnabled = true;
+    private static $cacheTTL = 60; // 60 secondes par défaut
+    private static $cacheHits = 0;
+    private static $cacheMisses = 0;
+
     private function __construct()
     {
         try {
@@ -236,5 +246,195 @@ class Database
         )");
         
         error_log("SQLite tables created/verified");
+    }
+
+    /**
+     * Active ou désactive le cache de requêtes
+     * @param bool $enabled État du cache
+     */
+    public static function enableQueryCache(bool $enabled = true): void
+    {
+        self::$cacheEnabled = $enabled;
+        error_log("Cache de requêtes " . ($enabled ? "activé" : "désactivé"));
+    }
+
+    /**
+     * Configure le TTL du cache
+     * @param int $seconds Durée de vie en secondes
+     */
+    public static function setQueryCacheTTL(int $seconds): void
+    {
+        self::$cacheTTL = max(1, $seconds);
+    }
+
+    /**
+     * Récupère des statistiques sur l'utilisation du cache
+     * @return array Statistiques du cache
+     */
+    public static function getQueryCacheStats(): array
+    {
+        return [
+            'enabled' => self::$cacheEnabled,
+            'ttl' => self::$cacheTTL,
+            'size' => count(self::$queryCache),
+            'hits' => self::$cacheHits,
+            'misses' => self::$cacheMisses,
+            'ratio' => self::$cacheHits + self::$cacheMisses > 0 
+                ? round(self::$cacheHits / (self::$cacheHits + self::$cacheMisses) * 100, 2) 
+                : 0
+        ];
+    }
+
+    /**
+     * Version optimisée de la méthode fetchAll avec cache
+     * @param string $sql Requête SQL
+     * @param array $params Paramètres
+     * @param bool $useCache Utiliser le cache ou non
+     * @return array Résultats de la requête
+     */
+    public function fetchAllWithCache(string $sql, array $params = [], bool $useCache = true): array
+    {
+        if (!self::$cacheEnabled || !$useCache) {
+            return $this->fetchAll($sql, $params);
+        }
+
+        $cacheKey = md5($sql . json_encode($params));
+        
+        if (isset(self::$queryCache[$cacheKey]) && 
+            (time() - self::$queryCache[$cacheKey]['time'] < self::$cacheTTL)) {
+            self::$cacheHits++;
+            return self::$queryCache[$cacheKey]['data'];
+        }
+        
+        self::$cacheMisses++;
+        $result = $this->fetchAll($sql, $params);
+        
+        self::$queryCache[$cacheKey] = [
+            'time' => time(),
+            'data' => $result
+        ];
+        
+        // Limiter la taille du cache pour éviter des problèmes de mémoire
+        if (count(self::$queryCache) > 100) {
+            // Supprimer l'entrée la plus ancienne
+            uasort(self::$queryCache, function($a, $b) {
+                return $a['time'] <=> $b['time'];
+            });
+            array_shift(self::$queryCache);
+        }
+        
+        return $result;
+    }
+
+    /**
+     * Exécute plusieurs requêtes en utilisant une seule transaction
+     * @param array $queries Tableau de requêtes [['sql' => '...', 'params' => [...]]]
+     * @return bool Succès de l'opération
+     */
+    public function executeInTransaction(array $queries): bool
+    {
+        $this->connection->beginTransaction();
+        
+        try {
+            foreach ($queries as $query) {
+                $stmt = $this->connection->prepare($query['sql']);
+                $stmt->execute($query['params'] ?? []);
+            }
+            
+            $this->connection->commit();
+            return true;
+        } catch (PDOException $e) {
+            $this->connection->rollBack();
+            error_log("Erreur d'exécution de requêtes en lot: " . $e->getMessage());
+            throw $e;
+        }
+    }
+    
+    /**
+     * Exécute un batch d'insertions en une seule requête
+     * @param string $table Nom de la table
+     * @param array $columns Colonnes à insérer
+     * @param array $valuesBatch Tableau de tableaux de valeurs
+     * @return int Nombre d'enregistrements insérés
+     */
+    public function batchInsert(string $table, array $columns, array $valuesBatch): int
+    {
+        if (empty($valuesBatch)) {
+            return 0;
+        }
+        
+        try {
+            // Préparer les placeholders pour chaque ensemble de valeurs
+            $placeholders = [];
+            $allValues = [];
+            
+            foreach ($valuesBatch as $values) {
+                $rowPlaceholders = [];
+                
+                foreach ($values as $value) {
+                    $rowPlaceholders[] = '?';
+                    $allValues[] = $value;
+                }
+                
+                $placeholders[] = '(' . implode(', ', $rowPlaceholders) . ')';
+            }
+            
+            $sql = "INSERT INTO {$table} (" . implode(', ', $columns) . ") 
+                    VALUES " . implode(', ', $placeholders);
+            
+            $stmt = $this->connection->prepare($sql);
+            $stmt->execute($allValues);
+            
+            return count($valuesBatch);
+        } catch (PDOException $e) {
+            error_log("Erreur lors de l'insertion en lot: " . $e->getMessage());
+            
+            // Si l'erreur est liée à la taille de la requête, diviser le lot
+            if (strpos($e->getMessage(), 'too many parameters') !== false || 
+                strpos($e->getMessage(), 'packet too large') !== false) {
+                
+                // Diviser le lot en deux et réessayer récursivement
+                $halfSize = ceil(count($valuesBatch) / 2);
+                $firstBatch = array_slice($valuesBatch, 0, $halfSize);
+                $secondBatch = array_slice($valuesBatch, $halfSize);
+                
+                $count = 0;
+                if (!empty($firstBatch)) {
+                    $count += $this->batchInsert($table, $columns, $firstBatch);
+                }
+                if (!empty($secondBatch)) {
+                    $count += $this->batchInsert($table, $columns, $secondBatch);
+                }
+                
+                return $count;
+            }
+            
+            throw $e;
+        }
+    }
+
+    /**
+     * Optimise la table spécifiée (ANALYZE TABLE)
+     * @param string $table Nom de la table
+     * @return bool Succès de l'opération
+     */
+    public function optimizeTable(string $table): bool
+    {
+        try {
+            $this->connection->exec("ANALYZE TABLE {$table}");
+            return true;
+        } catch (PDOException $e) {
+            error_log("Erreur lors de l'optimisation de la table {$table}: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Nettoie le cache de la base de données
+     */
+    public static function clearQueryCache(): void
+    {
+        self::$queryCache = [];
+        error_log("Cache de requêtes vidé");
     }
 } 

@@ -13,6 +13,8 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://cdn.datatables.net/1.13.7/css/dataTables.bootstrap5.min.css" rel="stylesheet">
     <link href="/assets/css/style.css" rel="stylesheet">
+    <!-- CSS dédié pour corriger le menu déroulant utilisateur -->
+    <link href="/assets/css/dropdown-fix.css" rel="stylesheet">
     
     <!-- Scripts supplémentaires spécifiques à la page -->
     <?php if (isset($pageScripts)): ?>
@@ -112,29 +114,29 @@
 
             <ul class="nav flex-column">
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $currentPage === 'dashboard' ? 'active' : ''; ?>" href="/dashboard">
+                    <a class="nav-link <?php echo ($currentPage === 'dashboard' || $current_page === 'dashboard') ? 'active' : ''; ?>" href="/dashboard">
                         <i class="fas fa-tachometer-alt"></i> <span>Tableau de bord</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $currentPage === 'import' ? 'active' : ''; ?>" href="/import">
+                    <a class="nav-link <?php echo ($currentPage === 'import' || $current_page === 'import') ? 'active' : ''; ?>" href="/import">
                         <i class="fas fa-file-import"></i> <span>Import</span>
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $currentPage === 'reports' ? 'active' : ''; ?>" href="/reports">
+                    <a class="nav-link <?php echo ($currentPage === 'reports' || $current_page === 'reports') ? 'active' : ''; ?>" href="/reports">
                         <i class="fas fa-chart-bar"></i> <span>Rapports</span>
                     </a>
                 </li>
                 <?php if (isset($auth) && $auth->isLoggedIn() && $auth->hasPermission('manage_users')): ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $currentPage === 'users' ? 'active' : ''; ?>" href="/users">
+                    <a class="nav-link <?php echo ($currentPage === 'users' || $current_page === 'users') ? 'active' : ''; ?>" href="/users">
                         <i class="fas fa-users"></i> <span>Utilisateurs</span>
                     </a>
                 </li>
                 <?php endif; ?>
                 <li class="nav-item">
-                    <a class="nav-link <?php echo $currentPage === 'settings' ? 'active' : ''; ?>" href="/settings">
+                    <a class="nav-link <?php echo ($currentPage === 'settings' || $current_page === 'settings') ? 'active' : ''; ?>" href="/settings">
                         <i class="fas fa-cog"></i> <span>Paramètres</span>
                     </a>
                 </li>
@@ -152,18 +154,18 @@
                     
                     <!-- Titre de la page dans le top menu -->
                     <div class="page-title-display">
-                        <?php if (isset($pageTitle)): ?>
-                            <span class="page-title-text"><?php echo htmlspecialchars($pageTitle); ?></span>
+                        <?php if (isset($pageTitle) || isset($title)): ?>
+                            <span class="page-title-text"><?php echo htmlspecialchars(isset($pageTitle) ? $pageTitle : $title); ?></span>
                         <?php endif; ?>
                     </div>
                     
                     <div class="ms-auto">
-                        <!-- NOUVELLE IMPLÉMENTATION DU MENU UTILISATEUR -->
-                        <div class="dropdown-container">
-                            <button type="button" id="userDropdown" class="user-icon-btn">
+                        <!-- MENU UTILISATEUR AMÉLIORÉ -->
+                        <div class="dropdown-container" id="userMenuContainer">
+                            <button type="button" id="userDropdown" class="user-icon-btn" aria-haspopup="true" aria-expanded="false" title="Menu utilisateur">
                                 <i class="fas fa-user-circle"></i>
                             </button>
-                            <div id="userDropdownMenu" class="custom-dropdown-menu">
+                            <div id="userDropdownMenu" class="custom-dropdown-menu" aria-labelledby="userDropdown" data-bs-popper="none">
                                 <!-- En-tête du profil utilisateur -->
                                 <div class="dropdown-profile-header">
                                     <div class="dropdown-avatar">
@@ -175,14 +177,14 @@
                                     </div>
                                 </div>
                                 <div class="dropdown-divider"></div>
-                                <a href="/profile" class="custom-dropdown-item">
+                                <a href="/profile" class="custom-dropdown-item" data-action="profile">
                                     <i class="fas fa-user"></i> Profil
                                 </a>
-                                <a href="/settings" class="custom-dropdown-item">
+                                <a href="/settings" class="custom-dropdown-item" data-action="settings">
                                     <i class="fas fa-cog"></i> Paramètres
                                 </a>
                                 <div class="dropdown-divider"></div>
-                                <a href="/logout" class="custom-dropdown-item">
+                                <a href="/logout" class="custom-dropdown-item" data-action="logout">
                                     <i class="fas fa-sign-out-alt"></i> Déconnexion
                                 </a>
                             </div>
@@ -238,9 +240,10 @@
     <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.7/js/dataTables.bootstrap5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-    <?php if (file_exists($_SERVER['DOCUMENT_ROOT'] . '/assets/js/app.js')): ?>
+    <!-- Chargement inconditionnel de app.js pour garantir le fonctionnement du menu utilisateur -->
     <script src="/assets/js/app.js"></script>
-    <?php endif; ?>
+    <!-- Script dédié au menu utilisateur pour assurer son fonctionnement sur toutes les pages -->
+    <script src="/assets/js/user-menu.js"></script>
     
     <!-- Scripts spécifiques à la page -->
     <?php if (isset($pageFooterScripts)): ?>
@@ -248,5 +251,58 @@
             <script src="<?php echo $script; ?>"></script>
         <?php endforeach; ?>
     <?php endif; ?>
+    
+    <!-- Script de secours pour le menu utilisateur (en cas d'échec du chargement des fichiers JS) -->
+    <script>
+    (function() {
+        // Fonction qui s'exécute immédiatement
+        function setupUserMenu() {
+            console.log("Initialisation du menu utilisateur (secours inline)");
+            
+            var userBtn = document.getElementById('userDropdown');
+            var userMenu = document.getElementById('userDropdownMenu');
+            
+            if (!userBtn || !userMenu) {
+                console.error("Menu utilisateur: éléments non trouvés (secours inline)");
+                return;
+            }
+            
+            userBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Toggle le menu
+                if (userMenu.style.display === 'block') {
+                    userMenu.style.display = 'none';
+                    userBtn.setAttribute('aria-expanded', 'false');
+                } else {
+                    userMenu.style.display = 'block';
+                    userBtn.setAttribute('aria-expanded', 'true');
+                }
+            };
+            
+            // Fermer le menu si on clique ailleurs
+            document.addEventListener('click', function(e) {
+                if (userMenu.style.display === 'block' && !userBtn.contains(e.target) && !userMenu.contains(e.target)) {
+                    userMenu.style.display = 'none';
+                    userBtn.setAttribute('aria-expanded', 'false');
+                }
+            });
+            
+            console.log("Menu utilisateur initialisé avec succès (secours inline)");
+        }
+        
+        // Exécuter après le chargement de la page
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', setupUserMenu);
+        } else {
+            // Léger délai pour s'assurer que tous les autres scripts ont une chance de s'exécuter
+            setTimeout(setupUserMenu, 100);
+        }
+        
+        // Dernière tentative après 2 secondes
+        setTimeout(setupUserMenu, 2000);
+    })();
+    </script>
 </body>
 </html> 

@@ -18,14 +18,15 @@ class AccessLog extends Model
     public $event_type; // Type d'événement (Entrée, Sortie, etc.)
     public $central; // Centrale, anciennement controller/location
     public $group_name; // Groupe, anciennement group/user_group
+    public $first_name; // Prénom de la personne
+    public $last_name; // Nom de la personne
+    public $status; // Statut de la personne
+    public $reader; // Lecteur utilisé pour l'accès
     public $created_at;
     public $updated_at;
     
     // Ces propriétés ne sont pas dans la base de données mais sont utilisées pour les objets temporaires
-    protected $temp_name; // Nom temporaire (non stocké en base)
-    protected $temp_firstname; // Prénom temporaire (non stocké en base)
-    protected $temp_reader; // Lecteur temporaire (non stocké en base)
-    protected $temp_status; // Statut temporaire (non stocké en base)
+    public $temp_reader; // Lecteur temporaire (pour rétrocompatibilité)
     
     /**
      * Récupère les logs d'accès pour une date spécifique
@@ -223,9 +224,11 @@ class AccessLog extends Model
         $db = self::getConnection();
         $stmt = $db->prepare("
             INSERT INTO access_logs 
-            (event_date, event_time, badge_number, event_type, central, group_name) 
+            (event_date, event_time, badge_number, event_type, central, group_name, 
+             first_name, last_name, status, reader) 
             VALUES 
-            (:event_date, :event_time, :badge_number, :event_type, :central, :group_name)
+            (:event_date, :event_time, :badge_number, :event_type, :central, :group_name,
+             :first_name, :last_name, :status, :reader)
         ");
         
         $stmt->bindValue(':event_date', $this->event_date);
@@ -234,6 +237,10 @@ class AccessLog extends Model
         $stmt->bindValue(':event_type', $this->event_type);
         $stmt->bindValue(':central', $this->central);
         $stmt->bindValue(':group_name', $this->group_name);
+        $stmt->bindValue(':first_name', $this->first_name);
+        $stmt->bindValue(':last_name', $this->last_name);
+        $stmt->bindValue(':status', $this->status);
+        $stmt->bindValue(':reader', $this->reader);
         
         return $stmt->execute();
     }
