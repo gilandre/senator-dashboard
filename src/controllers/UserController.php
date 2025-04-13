@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Controller;
 use App\Models\User;
 use App\Models\Profile;
 
@@ -10,13 +11,13 @@ class UserController extends Controller
 {
     private User $userModel;
     private Profile $profileModel;
-    private Auth $auth;
 
     public function __construct()
     {
+        parent::__construct();
         $this->userModel = new User();
         $this->profileModel = new Profile();
-        $this->auth = new Auth();
+        $this->layout = 'app';
     }
 
     public function index(): void
@@ -69,7 +70,7 @@ class UserController extends Controller
             $this->redirect('/dashboard');
         }
 
-        $user = $this->userModel->getById($id);
+        $user = $this->userModel->findById($id);
         if (!$user) {
             $this->redirect('/users');
         }
@@ -142,9 +143,9 @@ class UserController extends Controller
             } elseif ($newPassword !== $confirmPassword) {
                 $this->setError('New passwords do not match');
             } else {
-                $user = $this->userModel->getById($this->auth->getUserId());
+                $user = $this->userModel->findById($this->auth->getUserId());
                 
-                if (!$this->userModel->verifyPassword($currentPassword, $user['password'])) {
+                if (!$this->userModel->verifyPassword($currentPassword, $user->getPassword())) {
                     $this->setError('Current password is incorrect');
                 } else {
                     $this->userModel->changePassword($this->auth->getUserId(), $newPassword);
@@ -155,5 +156,15 @@ class UserController extends Controller
         }
 
         $this->view('users/change-password');
+    }
+
+    protected function setError(string $message): void
+    {
+        $_SESSION['error'] = $message;
+    }
+    
+    protected function setSuccess(string $message): void
+    {
+        $_SESSION['success'] = $message;
     }
 } 

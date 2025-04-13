@@ -1,6 +1,11 @@
 <!-- Topbar -->
-<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm">
+<nav class="navbar navbar-expand-lg navbar-light bg-white shadow-sm fixed-top">
     <div class="container-fluid">
+        <!-- Logo SENATOR -->
+        <a href="/dashboard" class="navbar-brand d-flex align-items-center">
+            <img src="/assets/images/logo.svg" alt="SENATOR" class="logo-topbar me-2" height="40">
+        </a>
+        
         <!-- Sidebar Toggle -->
         <button type="button" id="sidebarCollapse" class="btn btn-link">
             <i class="fas fa-chevron-left"></i>
@@ -52,24 +57,4 @@
     </div>
 </nav>
 
-<!-- Script pour le menu utilisateur -->
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    const userDropdown = document.getElementById('userDropdown');
-    const userDropdownMenu = document.getElementById('userDropdownMenu');
-    
-    if (userDropdown && userDropdownMenu) {
-        userDropdown.addEventListener('click', function(e) {
-            e.preventDefault();
-            userDropdownMenu.classList.toggle('show');
-        });
-        
-        // Fermer le menu si on clique ailleurs
-        document.addEventListener('click', function(e) {
-            if (!userDropdown.contains(e.target) && !userDropdownMenu.contains(e.target)) {
-                userDropdownMenu.classList.remove('show');
-            }
-        });
-    }
-});
-</script> 
+<!-- Le script pour le menu utilisateur a été déplacé vers fix.js pour éviter les conflits --> 

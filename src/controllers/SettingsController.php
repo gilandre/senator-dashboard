@@ -8,12 +8,14 @@ use App\Services\ConfigService;
 
 class SettingsController extends Controller
 {
-    private Auth $auth;
+    protected Auth $auth;
     private ConfigService $configService;
 
     public function __construct()
     {
         parent::__construct();
+        // Définir explicitement le layout à utiliser
+        $this->layout = 'app';
         $this->auth = new Auth();
         $this->configService = ConfigService::getInstance();
     }
@@ -108,9 +110,9 @@ class SettingsController extends Controller
             }
 
             if ($success) {
-                $this->setSuccess('Paramètres mis à jour avec succès');
+                $this->setFlash('success', 'Paramètres mis à jour avec succès');
             } else {
-                $this->setError('Erreur lors de la mise à jour des paramètres');
+                $this->setFlash('error', 'Erreur lors de la mise à jour des paramètres');
             }
             
             $this->redirect('/settings');

@@ -1,18 +1,41 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="200" height="50" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
-    <!-- Fond du logo -->
-    <rect x="0" y="0" width="200" height="50" rx="8" fill="#2c3e50"/>
+<svg width="200" height="60" viewBox="0 0 200 60" xmlns="http://www.w3.org/2000/svg">
+    <!-- Fond du logo avec gradient -->
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#1e5799"/>
+        <stop offset="100%" stop-color="#3498db"/>
+    </linearGradient>
+    <rect x="0" y="0" width="200" height="60" rx="10" fill="url(#logoGradient)"/>
     
-    <!-- Texte SENATOR -->
-    <text x="60" y="32" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="white">
+    <!-- Effet d'ombre interne -->
+    <rect x="3" y="3" width="194" height="54" rx="8" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>
+    
+    <!-- Texte SENATOR avec effet -->
+    <defs>
+        <filter id="textShadow" x="-10%" y="-10%" width="120%" height="120%">
+            <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.3"/>
+        </filter>
+    </defs>
+    
+    <text x="60" y="37" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="white" filter="url(#textShadow)">
         SENATOR
     </text>
     
-    <!-- Icône de graphique -->
-    <path d="M20,35 L20,25 L15,25 L15,35 L20,35 Z" fill="#3498db"/>
-    <path d="M30,35 L30,20 L25,20 L25,35 L30,35 Z" fill="#3498db"/>
-    <path d="M40,35 L40,15 L35,15 L35,35 L40,35 Z" fill="#3498db"/>
-    
-    <!-- Ligne de connexion -->
-    <path d="M15,35 L40,15" stroke="#e74c3c" stroke-width="2" fill="none"/>
+    <!-- Icône graphique moderne -->
+    <g transform="translate(15, 15)">
+        <!-- Graphique à barres avec effet de transparence -->
+        <rect x="0" y="15" width="8" height="15" rx="2" fill="white" opacity="0.7"/>
+        <rect x="12" y="8" width="8" height="22" rx="2" fill="white" opacity="0.8"/>
+        <rect x="24" y="2" width="8" height="28" rx="2" fill="white" opacity="0.9"/>
+        
+        <!-- Ligne de tendance avec effet d'animation -->
+        <path d="M4,25 C10,20 18,15 28,8" stroke="white" stroke-width="2" fill="none" stroke-linecap="round">
+            <animate attributeName="opacity" values="1;0.6;1" dur="3s" repeatCount="indefinite"/>
+        </path>
+        
+        <!-- Point d'accent -->
+        <circle cx="28" cy="8" r="3" fill="#e74c3c">
+            <animate attributeName="r" values="2;3;2" dur="2s" repeatCount="indefinite"/>
+        </circle>
+    </g>
 </svg> 

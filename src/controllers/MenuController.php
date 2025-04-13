@@ -14,6 +14,7 @@ class MenuController extends Controller
     public function __construct()
     {
         parent::__construct();
+        $this->layout = 'app';
         $this->menuModel = new Menu();
         $this->permissionModel = new Permission();
     }

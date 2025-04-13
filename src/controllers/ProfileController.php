@@ -3,6 +3,7 @@
 namespace App\Controllers;
 
 use App\Core\Auth;
+use App\Core\Controller;
 use App\Models\User;
 use App\Services\EmailService;
 
@@ -10,11 +11,13 @@ class ProfileController extends Controller
 {
     private User $userModel;
     private EmailService $emailService;
-    private Auth $auth;
+    protected Auth $auth;
 
     public function __construct()
     {
-        
+        parent::__construct();
+        // Définir explicitement le layout à utiliser
+        $this->layout = 'app';
         $this->userModel = new User();
         $this->emailService = new EmailService();
         $this->auth = new Auth();
@@ -30,7 +33,7 @@ class ProfileController extends Controller
         $user = $this->userModel->findById($userId);
         
         if (!$user) {
-            $this->setError('Utilisateur non trouvé');
+            $this->setFlash('error', 'Utilisateur non trouvé');
             $this->redirect('/dashboard');
         }
         
@@ -64,7 +67,7 @@ class ProfileController extends Controller
         $user = $this->userModel->findById($userId);
         
         if (!$user) {
-            $this->setError('Utilisateur non trouvé');
+            $this->setFlash('error', 'Utilisateur non trouvé');
             $this->redirect('/dashboard');
         }
         
@@ -99,10 +102,10 @@ class ProfileController extends Controller
                 $this->userModel->changePassword($userId, $hashedPassword);
             }
 
-            $this->setSuccess('Votre profil a été mis à jour avec succès.');
+            $this->setFlash('success', 'Votre profil a été mis à jour avec succès.');
             $this->redirect('/profile');
         } catch (\Exception $e) {
-            $this->setError($e->getMessage());
+            $this->setFlash('error', $e->getMessage());
             $this->redirect('/profile');
         }
     }
@@ -121,7 +124,7 @@ class ProfileController extends Controller
         $user = $this->userModel->findById($userId);
         
         if (!$user) {
-            $this->setError('Utilisateur non trouvé');
+            $this->setFlash('error', 'Utilisateur non trouvé');
             $this->redirect('/dashboard');
         }
         
@@ -146,10 +149,10 @@ class ProfileController extends Controller
             $hashedPassword = $this->userModel->hashPassword($newPassword);
             $this->userModel->changePassword($userId, $hashedPassword);
             
-            $this->setSuccess('Votre mot de passe a été modifié avec succès.');
+            $this->setFlash('success', 'Votre mot de passe a été modifié avec succès.');
             $this->redirect('/profile');
         } catch (\Exception $e) {
-            $this->setError($e->getMessage());
+            $this->setFlash('error', $e->getMessage());
             $this->redirect('/profile');
         }
     }

@@ -40,6 +40,7 @@ body {
     margin: 0;
     padding: 0;
     overflow-x: hidden;
+    padding-top: var(--topbar-height); /* Ajout de padding pour compenser la navbar fixe */
 }
 
 /* Wrapper */
@@ -48,10 +49,11 @@ body {
     min-height: 100vh;
 }
 
-/* Main Content - Gardons uniquement cette partie mais pas les styles du sidebar */
+/* Main Content */
 .main-content {
     flex: 1;
     transition: all 0.3s ease;
+    padding-top: 15px; /* Ajustement pour la navbar fixe */
 }
 
 /* Topbar - Style unifié pour toutes les pages */
@@ -62,12 +64,32 @@ body {
     padding: 0 20px;
     display: flex;
     align-items: center;
-    position: relative;
-    z-index: 999;
+    position: fixed; /* Fixé en haut */
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%; 
+    z-index: 1050; /* Augmenter le z-index pour être sûr qu'il est au-dessus */
 }
 
 .navbar-brand img {
     height: 30px;
+}
+
+/* Logo dans la navbar */
+.logo-topbar {
+    height: 40px;
+    width: auto;
+}
+
+/* Sidebar - Ajustement pour la navbar fixe */
+.sidebar {
+    position: fixed;
+    top: var(--topbar-height); /* Commence sous la navbar */
+    left: 0;
+    height: calc(100vh - var(--topbar-height));
+    overflow-y: auto;
+    z-index: 1000; /* Z-index inférieur à la navbar mais supérieur au contenu */
 }
 
 /* Page title styles - comme dans le dashboard */

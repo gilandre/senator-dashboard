@@ -3,38 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SENATOR - <?= htmlspecialchars($pageTitle ?? 'SENATOR') ?></title>
+    <title><?php echo $pageTitle ?? "SENATOR Dashboard"; ?></title>
     
-    <!-- Inclusion des meta tags -->
-    <?php include __DIR__ . '/partials/meta.php'; ?>
+    <!-- Meta tags -->
+    <?php include_once 'partials/meta.php'; ?>
     
-    <!-- Inclusion des styles -->
-    <?php include __DIR__ . '/partials/styles.php'; ?>
+    <!-- Styles -->
+    <?php include_once 'partials/styles.php'; ?>
+    
+    <!-- Script d'interface unifié -->
+    <script src="/assets/js/simple-interface.js"></script>
 </head>
-<body class="<?= isset($currentPage) ? 'page-' . $currentPage : '' ?>">
-    <!-- Wrapper -->
+<body>
     <div class="wrapper">
         <!-- Sidebar -->
-        <?php include __DIR__ . '/partials/sidebar.php'; ?>
+        <?php include_once 'partials/sidebar.php'; ?>
         
-        <!-- Main Content -->
-        <div class="main-content">
-            <!-- Topbar -->
-            <?php if (!isset($hideGlobalTopbar) || !$hideGlobalTopbar): ?>
-                <?php include __DIR__ . '/partials/navbar.php'; ?>
-            <?php endif; ?>
-            
-            <!-- Page Content -->
-            <div class="container-fluid py-4">
-                <?php echo $content ?? '' ?>
+        <!-- Page Content -->
+        <div class="content">
+            <?php if (!isset($hideGlobalTopbar) || !$hideGlobalTopbar) { ?>
+                <!-- Top Navigation Bar -->
+                <?php include_once 'partials/navbar.php'; ?>
+            <?php } ?>
+
+            <!-- Main Content -->
+            <div class="container-fluid main-container">
+                <?php echo $content; ?>
             </div>
+            
+            <!-- Footer -->
+            <?php include_once 'partials/footer.php'; ?>
         </div>
     </div>
-
-    <!-- Footer -->
-    <?php include __DIR__ . '/partials/footer.php'; ?>
     
-    <!-- Scripts (chargés à la fin du body) -->
-    <?php include __DIR__ . '/partials/scripts.php'; ?>
+    <!-- Scripts -->
+    <?php include_once 'partials/scripts.php'; ?>
 </body>
 </html> 

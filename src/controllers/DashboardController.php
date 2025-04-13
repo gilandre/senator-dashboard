@@ -13,8 +13,9 @@ class DashboardController extends Controller
     public function __construct()
     {
         parent::__construct();
-        // Définir explicitement le layout à utiliser (comme dans ImportController)
-        $this->layout = 'layouts/app';
+        $this->layout = 'app';
+        $this->setCurrentPage('dashboard');
+        $this->setPageTitle('Tableau de bord');
         $this->dashboardService = new DashboardService();
     }
 

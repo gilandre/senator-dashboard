@@ -3,12 +3,15 @@
 namespace App\Core;
 
 use App\Core\Auth;
+use App\Core\LayoutManager;
 
 abstract class Controller
 {
     protected Auth $auth;
     protected array $data = [];
-    protected string $layout = 'layouts/default';
+    protected string $layout = 'default';
+    protected LayoutManager $layoutManager;
+    protected array $pageData = [];
 
     /**
      * Indique si le monitoring de performance est activé
@@ -19,54 +22,111 @@ abstract class Controller
     public function __construct()
     {
         $this->auth = new Auth();
+        $this->layoutManager = new LayoutManager();
+        
+        // Initialisation des composants par défaut
+        $this->initializeComponents();
+
+        $this->layout = 'default';
+        $this->pageData = [
+            'pageTitle' => 'SENATOR Dashboard',
+            'currentPage' => 'dashboard', // Valeur par défaut
+            'meta_description' => 'SENATOR Dashboard - Système de gestion d\'accès'
+        ];
+    }
+    
+    /**
+     * Initialise les composants d'interface réutilisables
+     */
+    protected function initializeComponents(): void
+    {
+        // Composants communs
+        $this->layoutManager->addComponent('alert', 'components/alert.php');
+        $this->layoutManager->addComponent('card', 'components/card.php');
+        $this->layoutManager->addComponent('stat_card', 'components/stat_card.php');
+        
+        // Partials de layout
+        $this->layoutManager->addComponent('header', 'layouts/partials/header.php');
+        $this->layoutManager->addComponent('footer', 'layouts/partials/footer.php');
+        $this->layoutManager->addComponent('sidebar', 'layouts/partials/sidebar.php');
+        $this->layoutManager->addComponent('navbar', 'layouts/partials/navbar.php');
+        
+        // Variables partagées communes
+        $this->layoutManager->addSharedDataBatch([
+            'app_name' => $_ENV['APP_NAME'] ?? 'SENATOR',
+            'app_version' => $_ENV['APP_VERSION'] ?? '1.0.0',
+            'debug_mode' => $_ENV['APP_DEBUG'] ?? false
+        ]);
+    }
+
+    /**
+     * Définit le nom de la page courante (pour l'état actif du menu)
+     * @param string $page Nom de la page courante
+     * @return $this
+     */
+    public function setCurrentPage(string $page)
+    {
+        $this->pageData['currentPage'] = $page;
+        return $this;
+    }
+
+    /**
+     * Définit le titre de la page
+     * @param string $title Titre de la page
+     * @return $this
+     */
+    public function setPageTitle(string $title)
+    {
+        $this->pageData['pageTitle'] = $title;
+        return $this;
     }
 
     /**
      * Méthode pour appliquer un layout à une vue
+     * Cette méthode peut être utilisée de deux façons:
+     * 1. Comme setter pour définir le layout à utiliser ultérieurement: $this->layout('auth');
+     * 2. Pour appliquer immédiatement un layout au contenu déjà rendu
+     * 
      * @param string $layoutName Nom du layout
      * @param array $data Données à passer au layout
      */
     public function layout(string $layoutName, array $data = []): void
     {
-        // Récupérer le contenu de la vue courante
-        $content = ob_get_clean();
-        
-        // Démarrer un nouveau buffer pour le layout
-        ob_start();
-        
-        // Rendre les variables disponibles dans le layout
-        extract($data);
-        
-        // Vérifier si le nom du layout commence déjà par "layouts/"
-        if (strpos($layoutName, 'layouts/') === 0) {
-            // Si oui, utiliser le chemin directement
-            require __DIR__ . "/../views/{$layoutName}.php";
-        } else {
-            // Sinon, ajouter "layouts/" au chemin
-            require __DIR__ . "/../views/layouts/{$layoutName}.php";
+        // Si on passe des données, on assume qu'on veut appliquer le layout immédiatement
+        if (!empty($data)) {
+            $this->applyLayout($layoutName, $data);
+            return;
         }
         
-        // Envoyer le contenu au navigateur
-        echo ob_get_clean();
-        exit;
+        // Sinon, on définit le layout à utiliser ultérieurement
+        $this->layout = $layoutName;
     }
 
     /**
-     * Affiche une vue
-     *
-     * @param string $view Le nom de la vue à afficher
-     * @param array $data Les données à transmettre à la vue
+     * Affiche une vue en appliquant un layout si défini
      */
-    public function view(string $view, array $data = [])
+    public function view(string $view, array $data = []): void
     {
+        // Priorité aux données définies via les méthodes spécifiques
+        $data['pageTitle'] = $this->pageData['pageTitle'] ?? $data['pageTitle'] ?? null;
+        $data['currentPage'] = $this->pageData['currentPage'] ?? $data['currentPage'] ?? null;
+        
+        // Ajout automatique des informations utilisateur
+        if (isset($_SESSION['user'])) {
+            $data['user'] = $_SESSION['user'];
+        }
+        
+        // Ajout des messages flash
+        if (isset($_SESSION['success'])) {
+            $data['success'] = $_SESSION['success'];
+        }
+        if (isset($_SESSION['error'])) {
+            $data['error'] = $_SESSION['error'];
+        }
+        
         // Démarrer le timer de performance s'il est activé
         if ($this->performanceMonitoring && class_exists('\App\Helpers\PerformanceHelper')) {
             \App\Helpers\PerformanceHelper::startTimer('view-render');
-        }
-        
-        // Ajouter automatiquement le titre si non spécifié
-        if (!isset($data['title'])) {
-            $data['title'] = ucfirst(str_replace('_', ' ', $view));
         }
         
         // Ajouter des informations communes à toutes les vues
@@ -74,8 +134,9 @@ abstract class Controller
         $data['is_authenticated'] = isset($_SESSION['user']);
         $data['flash_messages'] = $this->getFlashMessages();
         $data['current_route'] = $_SERVER['REQUEST_URI'];
-        $data['app_name'] = $_ENV['APP_NAME'] ?? 'SENATOR';
-        $data['debug_mode'] = $_ENV['APP_DEBUG'] ?? false;
+        
+        // Ajouter ces données au LayoutManager
+        $this->layoutManager->addSharedDataBatch($data);
         
         // Préparer le chemin du fichier de vue
         $viewPath = str_replace('.', '/', $view);
@@ -98,25 +159,10 @@ abstract class Controller
         // Récupérer le contenu de la vue
         $content = ob_get_clean();
         
-        // Inclure le layout si spécifié
-        if (isset($this->layout) && $this->layout) {
-            $layoutFile = __DIR__ . "/../views/$this->layout.php";
-            
-            if (!file_exists($layoutFile)) {
-                throw new \Exception("Layout '$this->layout' introuvable.");
-            }
-            
-            // Extraire à nouveau les données pour qu'elles soient disponibles dans le layout
-            extract($data);
-            
-            // Démarrer une nouvelle capture pour le layout
-            ob_start();
-            
-            // Inclure le fichier de layout
-            include $layoutFile;
-            
-            // Remplacer le contenu original par le contenu avec layout
-            $content = ob_get_clean();
+        // Utiliser le LayoutManager pour rendre la vue avec le layout spécifié
+        if ($this->layout) {
+            $this->layoutManager->setLayout($this->layout);
+            $content = $this->layoutManager->render($content, $data);
         }
         
         // Ajouter le rapport de performance si activé
@@ -127,6 +173,32 @@ abstract class Controller
         
         // Afficher le contenu final
         echo $content;
+    }
+    
+    /**
+     * Rend un composant et retourne son contenu HTML
+     *
+     * @param string $name Nom du composant
+     * @param array $data Données à passer au composant
+     * @return string HTML du composant
+     */
+    public function component(string $name, array $data = []): string
+    {
+        // Vérifier si le composant existe
+        $componentPath = __DIR__ . "/../views/components/{$name}.php";
+        
+        if (!file_exists($componentPath)) {
+            error_log("Composant non trouvé: $componentPath");
+            return "<!-- Composant '$name' non trouvé -->";
+        }
+        
+        // Extraire les données pour les rendre disponibles dans le composant
+        extract($data);
+        
+        // Capturer la sortie du rendu
+        ob_start();
+        include $componentPath;
+        return ob_get_clean();
     }
 
     protected function redirect(string $url): void
@@ -198,48 +270,35 @@ abstract class Controller
     {
         $this->requireLogin();
         if (!$this->auth->isAdmin()) {
-            $this->redirect('/');
+            $this->redirect('/dashboard');
         }
     }
-
-    protected function flash(string $key, string $message): void
+    
+    protected function getFlashMessages(): array
     {
-        $_SESSION['flash'][$key] = $message;
+        $messages = $_SESSION['flash_messages'] ?? [];
+        unset($_SESSION['flash_messages']);
+        return $messages;
     }
-
-    protected function getFlash(string $key): ?string
-    {
-        if (isset($_SESSION['flash'][$key])) {
-            $message = $_SESSION['flash'][$key];
-            unset($_SESSION['flash'][$key]);
-            return $message;
-        }
-        return null;
-    }
-
-    // Pour compatibilité avec le code existant
+    
     protected function setFlash(string $type, string $message): void
     {
-        $_SESSION['flash'] = [
+        $_SESSION['flash_messages'][] = [
             'type' => $type,
             'message' => $message
         ];
     }
 
-    /**
-     * Récupère les messages flash et les supprime de la session
-     *
-     * @return array Messages flash par type
-     */
-    protected function getFlashMessages(): array
+    protected function applyLayout(string $layoutName, array $data): void
     {
-        $messages = [];
+        // Sinon, récupérer le contenu de la vue courante et appliquer le layout
+        $content = ob_get_clean();
         
-        if (isset($_SESSION['flash_messages'])) {
-            $messages = $_SESSION['flash_messages'];
-            unset($_SESSION['flash_messages']);
-        }
+        // Définir le layout dans le LayoutManager
+        $this->layoutManager->setLayout($layoutName);
         
-        return $messages;
+        // Rendre la page avec le LayoutManager
+        echo $this->layoutManager->render($content, $data);
+        exit;
     }
 } 

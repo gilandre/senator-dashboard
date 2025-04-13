@@ -12,6 +12,9 @@ class HomeController extends Controller
     public function __construct()
     {
         parent::__construct();
+        $this->layout = 'app';
+        $this->setCurrentPage('home');
+        $this->setPageTitle('Accueil');
         $this->auth = new Auth();
     }
 

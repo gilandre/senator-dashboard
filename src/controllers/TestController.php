@@ -5,6 +5,14 @@ namespace App\Controllers;
 use App\Core\Controller;
 
 class TestController extends Controller {
+    
+    public function __construct()
+    {
+        parent::__construct();
+        // Définir explicitement le layout à utiliser
+        $this->layout = 'app';
+    }
+    
     public function index() {
         echo "Test controller is working!";
         exit;

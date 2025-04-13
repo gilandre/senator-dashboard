@@ -244,6 +244,9 @@ class Router
         $this->post("/profile/update", ["ProfileController", "update"]);
         $this->post("/profile/changePassword", ["ProfileController", "changePassword"]);
         
+        // Demo modulaire
+        $this->get("/module-demo", ["ModuleDemoController", "index"]);
+        
         // Test routes - for debugging only
         $this->get("/test", ["TestController", "index"]);
         $this->get("/test/export", ["TestController", "exportCSV"]);
@@ -369,6 +372,9 @@ class Router
         $this->get("/profile", ["ProfileController", "index"]);
         $this->post("/profile/update", ["ProfileController", "update"]);
         $this->post("/profile/changePassword", ["ProfileController", "changePassword"]);
+        
+        // Demo modulaire
+        $this->get("/module-demo", ["ModuleDemoController", "index"]);
         
         // Test routes - for debugging only
         $this->get("/test", ["TestController", "index"]);

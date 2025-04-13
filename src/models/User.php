@@ -355,7 +355,9 @@ class User
      */
     public static function existsByEmail(string $email): bool
     {
-        return self::findByEmail($email) !== null;
+        // Créer une instance pour utiliser les méthodes d'instance
+        $userModel = new self();
+        return $userModel->findByEmail($email) !== null;
     }
     
     /**
@@ -394,5 +396,109 @@ class User
             
             error_log("Default admin user created successfully");
         }
+    }
+
+    /**
+     * Authentifie un utilisateur avec son nom d'utilisateur et son mot de passe
+     * 
+     * @param string $username Nom d'utilisateur
+     * @param string $password Mot de passe
+     * @return array|false Données de l'utilisateur ou false en cas d'échec
+     */
+    public function login(string $username, string $password)
+    {
+        // Chercher l'utilisateur par son nom d'utilisateur
+        $stmt = $this->db->prepare("SELECT * FROM users WHERE username = ? AND is_active = 1 AND is_locked = 0");
+        $stmt->execute([$username]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Vérifier si l'utilisateur existe
+        if (!$user) {
+            return false;
+        }
+        
+        // Vérifier le mot de passe
+        if (!password_verify($password, $user['password'])) {
+            // Incrémenter le compteur d'échecs de connexion
+            $this->incrementFailedLoginAttempts($user['id']);
+            return false;
+        }
+        
+        // Réinitialiser le compteur d'échecs de connexion
+        $this->resetFailedLoginAttempts($user['id']);
+        
+        // Mettre à jour la date de dernière connexion
+        $this->updateLastLogin($user['id']);
+        
+        // Ne pas retourner le mot de passe
+        unset($user['password']);
+        
+        return $user;
+    }
+    
+    /**
+     * Incrémente le compteur d'échecs de connexion
+     * 
+     * @param int $userId ID de l'utilisateur
+     * @return bool
+     */
+    private function incrementFailedLoginAttempts(int $userId): bool
+    {
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET failed_attempts = failed_attempts + 1,
+                last_failed_attempt = NOW() 
+            WHERE id = ?
+        ");
+        return $stmt->execute([$userId]);
+    }
+    
+    /**
+     * Réinitialise le compteur d'échecs de connexion
+     * 
+     * @param int $userId ID de l'utilisateur
+     * @return bool
+     */
+    private function resetFailedLoginAttempts(int $userId): bool
+    {
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET failed_attempts = 0
+            WHERE id = ?
+        ");
+        return $stmt->execute([$userId]);
+    }
+    
+    /**
+     * Met à jour la date de dernière connexion
+     * 
+     * @param int $userId ID de l'utilisateur
+     * @return bool
+     */
+    private function updateLastLogin(int $userId): bool
+    {
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET last_login = NOW() 
+            WHERE id = ?
+        ");
+        return $stmt->execute([$userId]);
+    }
+
+    /**
+     * Enregistre un token de mémorisation pour un utilisateur
+     * 
+     * @param int $userId ID de l'utilisateur
+     * @param string $token Token de mémorisation
+     * @return bool
+     */
+    public function saveRememberToken(int $userId, string $token): bool
+    {
+        $stmt = $this->db->prepare("
+            UPDATE users 
+            SET remember_token = ?
+            WHERE id = ?
+        ");
+        return $stmt->execute([$token, $userId]);
     }
 } 

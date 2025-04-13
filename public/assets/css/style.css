@@ -1018,4 +1018,53 @@ body.sidebar-collapsed .main-content {
 
 .global-topbar .custom-dropdown-menu {
     z-index: 1200;
+}
+
+/* Styles pour le logo plein et le logo réduit */
+.logo-full {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.logo-small {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+body.sidebar-collapsed .logo-full {
+    display: none;
+}
+
+body.sidebar-collapsed .logo-small {
+    display: block !important;
+}
+
+/* Styles pour le toggling du sidebar */
+.sidebar {
+    transition: all 0.3s ease;
+}
+
+.sidebar.collapsed {
+    width: 60px !important;
+}
+
+.main-content {
+    transition: all 0.3s ease;
+}
+
+.main-content.expanded {
+    margin-left: 60px !important;
+}
+
+/* Style pour le corps quand la sidebar est réduite */
+body.sidebar-collapsed {
+    padding-left: 60px;
+}
+
+/* S'assurer que le menu utilisateur est bien positionné */
+.custom-dropdown-menu.show {
+    display: block !important;
+}
+
+/* Style pour le bouton de menu utilisateur */
+.user-icon-btn {
+    cursor: pointer;
 } 

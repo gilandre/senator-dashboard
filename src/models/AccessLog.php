@@ -181,6 +181,23 @@ class AccessLog extends Model
     }
     
     /**
+     * Récupère les entrées les plus récentes
+     * 
+     * @param int $limit Nombre d'entrées à récupérer
+     * @return array Tableau des entrées récentes
+     */
+    public static function getRecent(int $limit = 5): array
+    {
+        $db = self::getConnection();
+        $query = "SELECT * FROM access_logs ORDER BY event_date DESC, event_time DESC LIMIT :limit";
+        $stmt = $db->prepare($query);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+    
+    /**
      * Supprime les données avant une date spécifiée
      */
     public static function deleteBeforeDate(string $date): int

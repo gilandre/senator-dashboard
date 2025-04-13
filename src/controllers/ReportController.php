@@ -12,8 +12,8 @@ class ReportController extends Controller
     public function __construct()
     {
         parent::__construct();
-        // Définir explicitement le layout à utiliser (comme dans les autres contrôleurs)
-        $this->layout = 'layouts/app';
+        // Définir explicitement le layout à utiliser
+        $this->layout = 'app';
         $this->reportService = new ReportService();
     }
 

@@ -16,6 +16,7 @@ class ButtonController extends Controller
     public function __construct()
     {
         parent::__construct();
+        $this->layout = 'app';
         $this->buttonModel = new Button();
         $this->menuModel = new Menu();
         $this->permissionModel = new Permission();
