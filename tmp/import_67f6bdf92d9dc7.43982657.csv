@@ -1,7 +1,0 @@
-Numéro de badge;Date évènements;Heure évènements;Centrale;Lecteur;Nature Evenement;Nom;Prénom;Statut;Groupe
-1001;01/01/2023;08:00:00;Centrale A;Lecteur 1;Entrée;Dupont;Jean;Actif;Groupe A
-1002;01/01/2023;08:05:00;Centrale A;Lecteur 2;Entrée;Martin;Sophie;Actif;Groupe B
-1003;01/01/2023;08:10:00;Centrale B;Lecteur 3;Entrée;Durand;Pierre;Actif;Groupe A
-1004;01/01/2023;17:00:00;Centrale A;Lecteur 1;Sortie;Dupont;Jean;Actif;Groupe A
-1005;01/01/2023;17:05:00;Centrale A;Lecteur 2;Sortie;Martin;Sophie;Actif;Groupe B
-1006;01/01/2023;17:10:00;Centrale B;Lecteur 3;Sortie;Durand;Pierre;Actif;Groupe A 

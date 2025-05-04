@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-    <style>
-        .favicon-text { font-family: Arial, sans-serif; font-weight: bold; font-size: 24px; }
-    </style>
-    <rect width="32" height="32" rx="4" fill="#2c3e50"/>
-    <text x="8" y="24" class="favicon-text" fill="#ffffff">S</text>
-</svg> 

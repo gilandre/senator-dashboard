@@ -1,6 +1,0 @@
-Numéro de badge;Date évènements;Heure évènements;Centrale;Nature Evenement;Nom;Prénom;Statut;Groupe;Date de début de validité;Date de création
-1234;01/04/2025;08:00:00;Centrale1;Entrée;Dupont;Jean;Actif;Employés;01/01/2025;01/01/2025
-5678;01/04/2025;09:30:00;Centrale2;Entrée;Martin;Sophie;Actif;Visiteurs;01/02/2025;01/02/2025
-9012;01/04/2025;12:15:00;Centrale1;Sortie;Dubois;Pierre;Actif;Employés;01/03/2025;01/03/2025
-3456;01/04/2025;13:45:00;Centrale3;Entrée;Leroy;Marie;Inactif;Prestataires;01/04/2025;01/04/2025
-7890;01/04/2025;17:30:00;Centrale2;Sortie;Bernard;Thomas;Actif;Employés;01/01/2025;01/01/2025 

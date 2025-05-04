@@ -1,96 +1,120 @@
-# Application SENATOR Dashboard
+# SenatorFX Dashboard
 
 ## Description
-Cette application permet de gérer les accès du personnel via un système de badges. Elle offre diverses fonctionnalités dont:
-- Import de données depuis des fichiers CSV
-- Visualisation des entrées/sorties via un tableau de bord
-- Gestion des utilisateurs et des permissions
-- Génération de rapports
+Ce dashboard permet d'analyser les données d'accès des employés d'une banque en Côte d'Ivoire, extraites du logiciel SENATOR FX. L'application permet d'importer des fichiers CSV, de visualiser les temps de présence et de générer des rapports RH personnalisés.
 
-## Prérequis
-- PHP 7.4 ou supérieur
-- MySQL 5.7 ou supérieur
-- Serveur web (Apache, Nginx, etc.)
-- Extensions PHP: PDO, PDO_MySQL, mbstring, json
+## Fonctionnalités
+- Import de fichiers CSV extraits de SENATOR FX
+- Visualisation des heures d'arrivée et de départ (jour/semaine/mois)
+- Calcul des durées de travail par employé
+- Gestion des jours fériés et journées continues
+- Rapports personnalisés pour les RH
+- Export des données au format Excel/PDF
+
+## Stack Technique
+- **Frontend**: Next.js 14 (App Router)
+- **Styling**: TailwindCSS, Shadcn/UI
+- **Charts**: Recharts
+- **Base de données**: MongoDB
+- **ORM**: Mongoose
+- **Authentification**: NextAuth.js
 
 ## Installation
 
-### 1. Configuration de l'environnement
-Créez un fichier `.env` à la racine du projet en vous basant sur le modèle `.env.example`:
-```
-# Application
-APP_NAME="SENATOR"
-APP_ENV=local
-APP_DEBUG=true
-APP_URL=http://localhost
-APP_KEY=base64:YourSecureKeyHere
-APP_SECRET=your-secret-key-here
+### Prérequis
+- Node.js 18+ et npm
+- MongoDB (local ou distant)
 
-# Database
-DB_CONNECTION=mysql
-DB_HOST=localhost
-DB_PORT=3306
-DB_DATABASE=senator_db
-DB_USERNAME=root
-DB_PASSWORD=
-DB_CHARSET=utf8mb4
+### Étapes d'installation
+1. Cloner le repository:
+   ```bash
+   git clone https://github.com/votre-username/senatorfx-dashboard.git
+   cd senatorfx-dashboard
+   ```
+
+2. Installer les dépendances:
+   ```bash
+   npm install
+   ```
+
+3. Configurer les variables d'environnement:
+   ```bash
+   cp .env.local.example .env.local
+   ```
+   Puis modifier le fichier `.env.local` avec vos paramètres
+
+4. Lancer le serveur de développement:
+   ```bash
+   npm run dev
+   ```
+
+5. Ouvrir [http://localhost:3000](http://localhost:3000) dans votre navigateur
+
+## Architecture
+```
+src/
+├── app/                    # Routes Next.js (App Router)
+│   ├── api/                # API routes
+│   ├── dashboard/          # Dashboard principal
+│   ├── employees/          # Gestion des employés
+│   ├── import/             # Import des données
+│   ├── reports/            # Rapports personnalisés
+│   └── settings/           # Paramètres (jours fériés, etc.)
+├── components/             # Composants réutilisables
+│   ├── ui/                 # Composants UI génériques
+│   ├── dashboard/          # Composants spécifiques au dashboard  
+│   ├── charts/             # Graphiques et visualisations
+│   └── forms/              # Formulaires
+├── lib/                    # Fonctions utilitaires et configuration
+│   ├── db/                 # Configuration de la base de données
+│   ├── csv-parser/         # Parseur de fichiers CSV
+│   └── utils/              # Fonctions utilitaires
+├── models/                 # Modèles Mongoose
+└── types/                  # Types TypeScript
 ```
 
-### 2. Création de la base de données
-Exécutez le script d'initialisation de la base de données:
-```
-php setup_db.php
-```
-
-### 3. Configuration du schéma de la base de données
-Exécutez le script de création des tables:
-```
-php run_schema.php
-```
-
-Si vous rencontrez des erreurs avec certaines tables, exécutez:
-```
-php fix_db.php
-```
-
-### 4. Création de l'utilisateur administrateur
-Un utilisateur administrateur est automatiquement créé avec les identifiants suivants:
-- **Nom d'utilisateur**: admin
-- **Mot de passe**: password
-
-Il est vivement recommandé de changer ce mot de passe après la première connexion.
+## Déploiement
+L'application peut être déployée:
+- En ligne (Vercel, AWS, etc.)
+- On-premise (Docker, serveur Node.js)
 
 ## Utilisation
+1. Aller sur la page d'importation
+2. Télécharger les fichiers CSV depuis SENATOR FX
+3. Importer les fichiers
+4. Visualiser les données et rapports dans le dashboard
 
-### Import de données CSV
-Placez vos fichiers CSV dans le répertoire `SENATOR_INVESTECH`. Le format attendu est:
+## License
+MIT 
+
+## Instructions pour les favicons
+
+Pour compléter l'installation des favicons, veuillez générer les fichiers d'icônes suivants :
+
+1. `/public/favicon/favicon.ico` - Icône principale (16x16, 32x32, 48x48)
+2. `/public/favicon/apple-touch-icon.png` - Icône Apple (180x180)
+3. `/public/favicon/android-chrome-192x192.png` - Icône Android (192x192)
+4. `/public/favicon/android-chrome-512x512.png` - Icône Android (512x512)
+
+Vous pouvez utiliser le fichier `/public/favicon/icon.svg` comme base pour générer ces icônes. Plusieurs services en ligne permettent de générer facilement des favicons à partir d'un fichier SVG, comme :
+
+- [Favicon Generator](https://realfavicongenerator.net/)
+- [Favicon.io](https://favicon.io/)
+
+## Lancement du serveur de développement
+
+```bash
+npm run dev
 ```
-Badge;Nom;Prenom;Groupe;Status;Date;Heure;Evenement;Central
-A12345;Dupont;Jean;ADMIN;Actif;01/01/2023;08:30;Entree;Portail Principal
+
+## Compilation pour la production
+
+```bash
+npm run build
 ```
 
-### Connexion à l'application
-1. Accédez à l'URL de l'application
-2. Connectez-vous avec les identifiants administrateur
-3. Vous serez redirigé vers le tableau de bord principal
+## Lancement en production
 
-### Fonctionnalités principales
-- **Tableau de bord**: Visualisez les statistiques d'entrées/sorties
-- **Import**: Importez de nouvelles données depuis des fichiers CSV
-- **Rapports**: Générez des rapports personnalisés
-- **Utilisateurs**: Gérez les utilisateurs et leurs permissions
-- **Paramètres**: Configurez les options de l'application
-
-## Structure du projet
-- `/config` - Fichiers de configuration
-- `/public` - Point d'entrée public de l'application
-- `/src` - Code source principal
-  - `/Core` - Classes fondamentales
-  - `/controllers` - Contrôleurs
-  - `/models` - Modèles de données
-  - `/views` - Vues et templates
-- `/database` - Migrations et seeds pour la base de données
-- `/SENATOR_INVESTECH` - Répertoire pour les fichiers d'import CSV
-
-## Support
-Pour toute question ou problème, veuillez contacter l'équipe de support à support@senator-investech.com. 
+```bash
+npm start
+``` 
