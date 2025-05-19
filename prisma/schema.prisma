@@ -1,0 +1,653 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                                                       Int                 @id @default(autoincrement())
+  name                                                     String              @db.VarChar(255)
+  email                                                    String              @unique(map: "email") @db.VarChar(255)
+  password                                                 String              @db.VarChar(255)
+  role                                                     users_role          @default(user)
+  first_login                                              Boolean?            @default(true)
+  created_at                                               DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at                                               DateTime?           @default(now()) @db.Timestamp(0)
+  password_expiry_date                                     DateTime?
+  password_reset_expires                                   DateTime?
+  password_reset_token                                     String?
+  status                                                   users_status        @default(active)
+  anomalies                                                anomalies[]
+  attendance_config                                        attendance_config[]
+  holidays                                                 holidays[]
+  password_history                                         password_history[]
+  report_histories                                         report_history[]
+  report_schedules                                         report_schedule[]
+  report_templates                                         report_templates[]
+  security_incidents                                       SecurityIncident[]
+  security_incidents_security_incidents_resolved_byTousers SecurityIncident[]  @relation("security_incidents_resolved_byTousers")
+  security_settings                                        security_settings[]
+  timesheetEntries                                         timesheet_entry[]
+  user_activities                                          user_activities[]
+  user_profiles                                            UserProfile[]
+
+  @@index([email], map: "idx_email")
+  @@map("users")
+}
+
+model Profile {
+  id                  Int                 @id @default(autoincrement())
+  name                String              @unique(map: "name") @db.VarChar(255)
+  description         String?             @db.Text
+  created_at          DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at          DateTime?           @default(now()) @db.Timestamp(0)
+  profile_permissions ProfilePermission[]
+  user_profiles       UserProfile[]
+
+  @@map("profiles")
+}
+
+model UserProfile {
+  user_id    Int     @map("user_id")
+  profile_id Int     @map("profile_id")
+  user       User    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profiles_ibfk_1")
+  profile    Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profiles_ibfk_2")
+
+  @@id([user_id, profile_id])
+  @@index([profile_id], map: "profile_id")
+  @@map("user_profiles")
+}
+
+model Permission {
+  id                  Int                 @id @default(autoincrement())
+  name                String              @unique(map: "name") @db.VarChar(255)
+  description         String?             @db.Text
+  module              String?             @db.VarChar(255)
+  action              String?             @db.VarChar(255)
+  created_at          DateTime?           @default(now()) @map("created_at") @db.Timestamp(0)
+  profile_permissions ProfilePermission[]
+  role_permissions    role_permissions[]
+
+  @@map("permissions")
+}
+
+model ProfilePermission {
+  profile_id    Int        @map("profile_id")
+  permission_id Int        @map("permission_id")
+  profile       Profile    @relation(fields: [profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "profile_permissions_ibfk_1")
+  permission    Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "profile_permissions_ibfk_2")
+
+  @@id([profile_id, permission_id])
+  @@index([permission_id], map: "permission_id")
+  @@map("profile_permissions")
+}
+
+model SecurityIncident {
+  id                                          Int                        @id @default(autoincrement())
+  type                                        String                     @db.VarChar(255)
+  description                                 String?                    @db.Text
+  user_id                                     Int?                       @map("user_id")
+  ip_address                                  String?                    @map("ip_address") @db.VarChar(45)
+  status                                      security_incidents_status? @default(info)
+  occurred_at                                 DateTime?                  @default(now()) @db.Timestamp(0)
+  resolved_at                                 DateTime?                  @db.Timestamp(0)
+  resolved_by                                 Int?
+  user                                        User?                      @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_1")
+  users_security_incidents_resolved_byTousers User?                      @relation("security_incidents_resolved_byTousers", fields: [resolved_by], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_2")
+
+  @@index([resolved_by], map: "resolved_by")
+  @@index([user_id], map: "user_id")
+  @@map("security_incidents")
+}
+
+model access_logs {
+  id             Int                     @id @default(autoincrement())
+  badge_number   String                  @db.VarChar(50)
+  person_type    access_logs_person_type
+  event_date     DateTime                @db.Date
+  event_time     DateTime                @db.Time(0)
+  reader         String?                 @db.VarChar(255)
+  terminal       String?                 @db.VarChar(255)
+  event_type     access_logs_event_type? @default(unknown)
+  direction      String?                 @db.VarChar(50)
+  full_name      String?                 @db.VarChar(255)
+  group_name     String?                 @db.VarChar(255)
+  processed      Boolean?                @default(false)
+  created_at     DateTime?               @default(now()) @db.Timestamp(0)
+  raw_event_type String?                 @db.VarChar(255)
+
+  @@index([badge_number], map: "idx_badge")
+  @@index([event_date], map: "idx_date")
+  @@index([event_type], map: "idx_event_type")
+  @@index([reader], map: "idx_reader")
+}
+
+model access_records {
+  id          Int                        @id @default(autoincrement())
+  person_id   Int
+  person_type access_records_person_type
+  direction   access_records_direction
+  location    String                     @db.VarChar(255)
+  device_id   String                     @db.VarChar(100)
+  timestamp   DateTime?                  @default(now()) @db.DateTime(0)
+  status      access_records_status?     @default(valid)
+  created_at  DateTime?                  @default(now()) @db.Timestamp(0)
+  updated_at  DateTime?                  @default(now()) @db.Timestamp(0)
+
+  @@index([location, timestamp], map: "idx_location_timestamp")
+  @@index([person_id, person_type], map: "idx_person")
+  @@index([person_type, timestamp], map: "idx_person_type_timestamp")
+  @@index([timestamp], map: "idx_timestamp")
+}
+
+model anomalies {
+  id           Int                 @id @default(autoincrement())
+  badge_number String?             @db.VarChar(50)
+  description  String              @db.Text
+  severity     anomalies_severity? @default(medium)
+  status       anomalies_status?   @default(new)
+  detected_at  DateTime?           @default(now()) @db.Timestamp(0)
+  resolved_at  DateTime?           @db.Timestamp(0)
+  resolved_by  Int?
+  users        User?               @relation(fields: [resolved_by], references: [id], onUpdate: NoAction, map: "anomalies_ibfk_1")
+
+  @@index([resolved_by], map: "resolved_by")
+}
+
+model attendance_config {
+  id               Int       @id @default(autoincrement())
+  work_start_time  DateTime? @default(dbgenerated("'09:00:00'")) @db.Time(0)
+  work_end_time    DateTime? @default(dbgenerated("'17:00:00'")) @db.Time(0)
+  lunch_start_time DateTime? @default(dbgenerated("'12:00:00'")) @db.Time(0)
+  lunch_end_time   DateTime? @default(dbgenerated("'13:00:00'")) @db.Time(0)
+  work_days        String?   @default("1,2,3,4,5") @db.VarChar(20)
+  updated_at       DateTime? @default(now()) @db.Timestamp(0)
+  updated_by       Int?
+  users            User?     @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "attendance_config_ibfk_1")
+
+  @@index([updated_by], map: "updated_by")
+}
+
+model attendance_parameters {
+  id                        Int                                       @id @default(autoincrement())
+  start_hour                String                                    @default("08:00") @db.VarChar(5)
+  end_hour                  String                                    @default("17:00") @db.VarChar(5)
+  daily_hours               Decimal                                   @default(8.00) @db.Decimal(4, 2)
+  count_weekends            Boolean?                                  @default(false)
+  count_holidays            Boolean?                                  @default(false)
+  lunch_break               Boolean?                                  @default(true)
+  lunch_break_duration      Int?                                      @default(60)
+  lunch_break_start         String?                                   @default("12:00") @db.VarChar(5)
+  lunch_break_end           String?                                   @default("13:00") @db.VarChar(5)
+  allow_other_breaks        Boolean?                                  @default(true)
+  max_break_time            Int?                                      @default(30)
+  absence_request_deadline  Int?                                      @default(3)
+  overtime_request_deadline Int?                                      @default(5)
+  round_attendance_time     Boolean?                                  @default(false)
+  rounding_interval         Int?                                      @default(15)
+  rounding_direction        attendance_parameters_rounding_direction? @default(nearest)
+  last_updated              DateTime?                                 @default(now()) @db.Timestamp(0)
+  updated_by                String?                                   @default("system") @db.VarChar(100)
+  working_days              String?                                   @default("1,2,3,4,5") @db.VarChar(20)
+}
+
+model departments {
+  id          Int         @id @default(autoincrement())
+  name        String      @unique @db.VarChar(255)
+  description String?     @db.Text
+  location    String?     @db.VarChar(255)
+  created_at  DateTime?   @default(now()) @db.Timestamp(0)
+  updated_at  DateTime?   @default(now()) @db.Timestamp(0)
+  employees   employees[] @relation("department_employees")
+
+  @@index([name], map: "idx_department_name")
+}
+
+model employees {
+  id            Int               @id @default(autoincrement())
+  badge_number  String            @unique(map: "badge_number") @db.VarChar(50)
+  employee_id   String?           @unique(map: "employee_id") @db.VarChar(50)
+  first_name    String            @db.VarChar(255)
+  last_name     String            @db.VarChar(255)
+  email         String?           @unique(map: "email") @db.VarChar(255)
+  department    String?           @db.VarChar(255)
+  position      String?           @db.VarChar(255)
+  status        employees_status? @default(active)
+  created_at    DateTime?         @default(now()) @db.Timestamp(0)
+  updated_at    DateTime?         @default(now()) @db.Timestamp(0)
+  department_id Int?
+  dept          departments?      @relation("department_employees", fields: [department_id], references: [id])
+  lunch_breaks  lunch_breaks[]
+
+  @@index([badge_number], map: "idx_badge")
+  @@index([department], map: "idx_department")
+  @@index([department_id], map: "idx_department_id")
+  @@index([employee_id], map: "idx_employee_id")
+  @@index([status], map: "idx_status")
+}
+
+model holidays {
+  id             Int       @id @default(autoincrement())
+  date           DateTime  @unique @db.Date
+  name           String    @db.VarChar(255)
+  description    String?   @db.Text
+  type           String    @default("legal") @db.VarChar(50)
+  repeats_yearly Boolean   @default(false)
+  created_at     DateTime? @default(now()) @db.Timestamp(0)
+  created_by     Int?
+  users          User?     @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "holidays_ibfk_1")
+
+  @@index([created_by], map: "created_by")
+  @@map("holidays")
+}
+
+model modules {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique(map: "name") @db.VarChar(255)
+  description String?   @db.Text
+  enabled     Boolean?  @default(true)
+  created_at  DateTime? @default(now()) @db.Timestamp(0)
+  updated_at  DateTime? @default(now()) @db.Timestamp(0)
+}
+
+model password_history {
+  id         Int       @id @default(autoincrement())
+  user_id    Int
+  password   String    @db.VarChar(255)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "password_history_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model role_permissions {
+  id            Int        @id @default(autoincrement())
+  role_id       Int
+  permission_id Int
+  created_at    DateTime?  @default(now()) @db.Timestamp(0)
+  roles         roles      @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_permissions_ibfk_1")
+  permissions   Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "role_permissions_ibfk_2")
+
+  @@unique([role_id, permission_id], map: "idx_role_permission")
+  @@index([permission_id], map: "permission_id")
+}
+
+model roles {
+  id               Int                @id @default(autoincrement())
+  name             String             @unique(map: "name") @db.VarChar(100)
+  description      String?            @db.Text
+  is_active        Boolean?           @default(true)
+  is_default       Boolean?           @default(false)
+  created_at       DateTime?          @default(now()) @db.Timestamp(0)
+  updated_at       DateTime?          @default(now()) @db.Timestamp(0)
+  role_permissions role_permissions[]
+
+  @@index([is_active], map: "idx_is_active")
+  @@index([name], map: "idx_name")
+}
+
+model security_settings {
+  id                      Int       @id @default(autoincrement())
+  min_password_length     Int?      @default(8)
+  require_special_chars   Boolean?  @default(true)
+  require_numbers         Boolean?  @default(true)
+  require_uppercase       Boolean?  @default(true)
+  password_history_count  Int?      @default(3)
+  max_login_attempts      Int?      @default(5)
+  lock_duration_minutes   Int?      @default(30)
+  two_factor_auth_enabled Boolean?  @default(false)
+  updated_at              DateTime? @default(now()) @db.Timestamp(0)
+  updated_by              Int?
+  users                   User?     @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "security_settings_ibfk_1")
+
+  @@index([updated_by], map: "updated_by")
+}
+
+model user_activities {
+  id         Int       @id @default(autoincrement())
+  user_id    Int?
+  action     String    @db.VarChar(255)
+  details    String?   @db.Text
+  ip_address String?   @db.VarChar(45)
+  timestamp  DateTime? @default(now()) @db.Timestamp(0)
+  users      User?     @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "user_activities_ibfk_1")
+
+  @@index([user_id], map: "user_id")
+}
+
+model visitors {
+  id           Int             @id @default(autoincrement())
+  badge_number String          @unique(map: "badge_number") @db.VarChar(50)
+  first_name   String          @db.VarChar(255)
+  last_name    String          @db.VarChar(255)
+  company      String          @db.VarChar(255)
+  reason       String?         @db.Text
+  status       visitors_status @default(active)
+  created_at   DateTime        @default(now()) @db.Timestamp(0)
+  updated_at   DateTime        @updatedAt
+  access_count Int             @default(0)
+  first_seen   DateTime?
+  last_seen    DateTime?
+
+  @@index([badge_number], map: "idx_badge")
+  @@index([status], map: "idx_status")
+}
+
+model auth_log {
+  id            Int      @id @default(autoincrement())
+  event_type    String
+  email         String
+  ip_address    String
+  user_id       Int?
+  details       String?  @db.Text
+  error_details String?  @db.Text
+  timestamp     DateTime @default(now())
+
+  @@index([user_id])
+  @@index([email])
+  @@index([timestamp])
+}
+
+model timesheet_entry {
+  id             Int      @id @default(autoincrement())
+  user_id        Int
+  date           DateTime @db.Date
+  start_time     String   @db.VarChar(5)
+  end_time       String   @db.VarChar(5)
+  break_duration Int      @default(0)
+  activity_type  String   @db.VarChar(100)
+  project_id     Int?
+  task_id        Int?
+  description    String?  @db.Text
+  status         String   @default("draft") @db.VarChar(20)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  project        project? @relation(fields: [project_id], references: [id])
+  task           task?    @relation(fields: [task_id], references: [id])
+  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([project_id])
+  @@index([task_id])
+  @@index([date])
+  @@index([status])
+}
+
+model project {
+  id                Int               @id @default(autoincrement())
+  name              String            @db.VarChar(200)
+  code              String            @unique @db.VarChar(50)
+  description       String?           @db.Text
+  status            String            @default("active") @db.VarChar(20)
+  start_date        DateTime?         @db.Date
+  end_date          DateTime?         @db.Date
+  client_id         Int?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  tasks             task[]
+  timesheet_entries timesheet_entry[]
+}
+
+model task {
+  id                Int               @id @default(autoincrement())
+  name              String            @db.VarChar(200)
+  code              String            @unique @db.VarChar(50)
+  description       String?           @db.Text
+  status            String            @default("open") @db.VarChar(20)
+  project_id        Int
+  deadline          DateTime?         @db.Date
+  estimated_hours   Float?
+  created_at        DateTime          @default(now())
+  updated_at        DateTime          @updatedAt
+  project           project           @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  timesheet_entries timesheet_entry[]
+
+  @@index([project_id])
+}
+
+model lunch_breaks {
+  id          Int       @id @default(autoincrement())
+  employee_id Int
+  date        DateTime  @db.Date
+  start_time  DateTime  @db.Time(0)
+  end_time    DateTime  @db.Time(0)
+  duration    Int       @default(60)
+  created_at  DateTime? @default(now()) @db.Timestamp(0)
+  updated_at  DateTime? @default(now()) @db.Timestamp(0)
+  employee    employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@unique([employee_id, date], map: "unique_employee_date")
+  @@index([employee_id], map: "idx_employee_id")
+  @@index([date], map: "idx_date")
+}
+
+model reports {
+  id          Int                @id @default(autoincrement())
+  title       String             @db.VarChar(255)
+  description String?            @db.Text
+  report_type String             @db.VarChar(100)
+  category    String             @db.VarChar(100)
+  icon        String?            @db.VarChar(50)
+  link        String?            @db.VarChar(255)
+  created_at  DateTime           @default(now()) @db.Timestamp(0)
+  updated_at  DateTime           @updatedAt
+  histories   report_history[]
+  schedules   report_schedule[]
+  templates   report_templates[]
+
+  @@index([report_type], map: "idx_report_type")
+  @@index([category], map: "idx_category")
+}
+
+model report_templates {
+  id          Int      @id @default(autoincrement())
+  report_id   Int
+  name        String   @db.VarChar(255)
+  description String?  @db.Text
+  parameters  Json?
+  is_default  Boolean  @default(false)
+  created_by  Int?
+  created_at  DateTime @default(now()) @db.Timestamp(0)
+  updated_at  DateTime @updatedAt
+  user        User?    @relation(fields: [created_by], references: [id])
+  report      reports  @relation(fields: [report_id], references: [id], onDelete: Cascade)
+
+  @@index([report_id], map: "idx_report_id")
+  @@index([created_by], map: "idx_created_by")
+  @@index([is_default], map: "idx_is_default")
+}
+
+model report_history {
+  id               Int       @id @default(autoincrement())
+  report_id        Int
+  user_id          Int?
+  title            String    @db.VarChar(255)
+  parameters       Json?
+  status           String    @default("pending") @db.VarChar(20)
+  file_url         String?   @db.VarChar(255)
+  file_name        String?   @db.VarChar(255)
+  file_size        Int?
+  file_format      String?   @db.VarChar(10)
+  generated_at     DateTime  @default(now()) @db.Timestamp(0)
+  completed_at     DateTime? @db.Timestamp(0)
+  error_message    String?   @db.Text
+  scheduled_report Int?
+  report           reports   @relation(fields: [report_id], references: [id])
+  user             User?     @relation(fields: [user_id], references: [id])
+
+  @@index([report_id], map: "idx_report_id")
+  @@index([user_id], map: "idx_user_id")
+  @@index([status], map: "idx_status")
+  @@index([generated_at], map: "idx_generated_at")
+}
+
+model report_schedule {
+  id         Int       @id @default(autoincrement())
+  report_id  Int
+  title      String    @db.VarChar(255)
+  frequency  String    @db.VarChar(20)
+  schedule   Json
+  recipients Json
+  parameters Json?
+  formats    Json?
+  status     String    @default("active") @db.VarChar(20)
+  created_by Int?
+  created_at DateTime  @default(now()) @db.Timestamp(0)
+  updated_at DateTime  @updatedAt
+  last_run   DateTime? @db.Timestamp(0)
+  next_run   DateTime? @db.Timestamp(0)
+  user       User?     @relation(fields: [created_by], references: [id])
+  report     reports   @relation(fields: [report_id], references: [id], onDelete: Cascade)
+
+  @@index([report_id], map: "idx_report_id")
+  @@index([created_by], map: "idx_created_by")
+  @@index([status], map: "idx_status")
+  @@index([next_run], map: "idx_next_run")
+}
+
+model group_name {
+  id              Int       @id @default(autoincrement())
+  name            String    @unique @db.VarChar(255)
+  description     String?   @db.Text
+  first_seen_date DateTime  @db.Date
+  created_at      DateTime  @default(now()) @db.Timestamp(0)
+  updated_at      DateTime? @updatedAt
+
+  @@index([name], map: "idx_group_name")
+}
+
+enum access_logs_person_type {
+  employee
+  visitor
+}
+
+enum access_records_person_type {
+  employee
+  visitor
+}
+
+enum access_records_direction {
+  in
+  out
+}
+
+enum anomalies_severity {
+  low
+  medium
+  high
+}
+
+enum anomalies_status {
+  new
+  investigating
+  resolved
+  dismissed
+}
+
+enum users_role {
+  admin
+  operator
+  viewer
+  user
+}
+
+enum security_incidents_status {
+  info
+  warning
+  critical
+  resolved
+  locked
+}
+
+enum visitors_status {
+  active
+  inactive
+}
+
+enum access_records_status {
+  valid
+  invalid
+  pending
+}
+
+enum employees_status {
+  active
+  inactive
+  suspended
+}
+
+enum attendance_parameters_rounding_direction {
+  up
+  down
+  nearest
+}
+
+enum users_status {
+  active
+  inactive
+  suspended
+}
+
+enum access_logs_event_type {
+  unknown
+  entry
+  exit
+  access_denied
+  alarm
+  system
+  user_accepted
+  user_rejected
+  door_forced
+  door_held
+  door_locked
+  door_unlocked
+  door_opened
+  door_closed
+  door_timeout
+  door_denied
+  door_authorized
+  door_unauthorized
+  door_forced_open
+  door_forced_closed
+  door_held_open
+  door_held_closed
+  door_locked_manually
+  door_unlocked_manually
+  door_locked_automatically
+  door_unlocked_automatically
+  door_locked_by_schedule
+  door_unlocked_by_schedule
+  door_locked_by_alarm
+  door_unlocked_by_alarm
+  door_locked_by_emergency
+  door_unlocked_by_emergency
+  door_locked_by_fire
+  door_unlocked_by_fire
+  door_locked_by_security
+  door_unlocked_by_security
+  door_locked_by_system
+  door_unlocked_by_system
+  door_locked_by_user
+  door_unlocked_by_user
+  door_locked_by_admin
+  door_unlocked_by_admin
+  door_locked_by_operator
+  door_unlocked_by_operator
+  door_locked_by_guard
+  door_unlocked_by_guard
+  door_locked_by_visitor
+  door_unlocked_by_visitor
+  door_locked_by_employee
+  door_unlocked_by_employee
+  door_locked_by_contractor
+  door_unlocked_by_contractor
+  door_locked_by_vendor
+  door_unlocked_by_vendor
+  door_locked_by_guest
+  door_unlocked_by_guest
+  door_locked_by_other
+  door_unlocked_by_other
+}

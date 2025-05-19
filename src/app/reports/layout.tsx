@@ -1,0 +1,29 @@
+import React from 'react';
+import TopMenu from '@/components/ui/top-menu';
+import SideMenu from '@/components/ui/side-menu';
+import { Toaster } from '@/components/ui/toaster';
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: "Rapports | SenatorFX",
+  description: "Rapports d'accès et statistiques",
+};
+
+export default function ReportsLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col h-screen">
+      <TopMenu />
+      <div className="flex flex-1 overflow-hidden">
+        <SideMenu />
+        <main className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
+          {children}
+        </main>
+      </div>
+      <Toaster />
+    </div>
+  );
+} 

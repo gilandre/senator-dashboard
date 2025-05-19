@@ -1,42 +1,44 @@
-# Fichiers d'environnement
-.env
-.env.backup
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# Dépendances
-/vendor/
-/node_modules/
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+.yarn/install-state.gz
 
-# Fichiers de logs
-*.log
-php_error.log
+# testing
+/coverage
 
-# Fichiers de base de données SQLite
-/database/*.sqlite
-/database/*.sqlite-journal
+# next.js
+/.next/
+/out/
 
-# Fichiers de cache
-.phpunit.result.cache
-Homestead.json
-Homestead.yaml
+# production
+/build
 
-# Fichiers générés par l'IDE
-.idea/
-.vscode/
-*.sublime-project
-*.sublime-workspace
-
-# Fichiers système
+# misc
 .DS_Store
-Thumbs.db
+*.pem
 
-# Fichiers de cache composer
-composer.phar
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# Dossiers de stockage
-/storage/
+# local env files
+.env
+.env*.local
 
-# Fichiers temporaires
-*.swp
-*.swo
-*.tmp
-*~ 
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# mongodb backups
+/mongo-backup-*
+
+# logs
+/logs
+*.log 
