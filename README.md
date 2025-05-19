@@ -14,69 +14,124 @@ Application de gestion de contrôle d'accès utilisant Next.js, Prisma et MySQL.
 
 L'application utilise un fichier `.env` pour la configuration. Voici un exemple de fichier `.env` :
 
-```
+```env
 # Configuration du serveur
 PORT=3010
 
 # Configuration de la base de données MySQL
-DATABASE_URL="mysql://utilisateur:mot_de_passe@localhost:3306/senator_db"
+DATABASE_URL="mysql://utilisateur:mot_de_passe@localhost:3306/SENATOR_INVESTECH"
 
 # Configuration de l'application
 NODE_ENV="development"
 APP_URL="http://localhost:3010"
-```
 
-Si le fichier `.env` n'existe pas, il sera créé automatiquement avec des valeurs par défaut lors du premier démarrage de l'application avec `npm run start:env`.
+# Configuration de l'authentification
+NEXTAUTH_URL="http://localhost:3010"
+NEXTAUTH_SECRET="votre_secret_ici"
+
+# Configuration des emails (optionnel)
+SMTP_HOST="smtp.example.com"
+SMTP_PORT="587"
+SMTP_USER="user@example.com"
+SMTP_PASSWORD="password"
+SMTP_FROM="noreply@senator.com"
+```
 
 ### Base de données
 
-Assurez-vous que votre base de données MySQL est créée et accessible avec les identifiants configurés dans le fichier `.env`.
-
-Pour initialiser la base de données :
-
-```bash
-npx prisma migrate dev --name init
-npx prisma db seed
+1. Créez la base de données MySQL :
+```sql
+CREATE DATABASE SENATOR_INVESTECH CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 ```
+
+2. Initialisez la base de données avec Prisma :
+```bash
+# Générer le client Prisma
+npx prisma generate
+
+# Appliquer les migrations
+npx prisma migrate dev --name init
+
+# Charger les données initiales
+npm run db:seed
+```
+
+Les données initiales incluent :
+- Un compte administrateur (admin@senator.com / Admin@123)
+- Un compte utilisateur standard (user@senator.com / User@123)
+- Les permissions de base
+- Les paramètres de sécurité par défaut
+- La configuration des horaires de travail
+- Les jours fériés de base
 
 ## Démarrage de l'application
 
-### Avec les variables d'environnement du fichier .env
+### Développement
 
 ```bash
-npm run start:env
-```
+# Installation des dépendances
+npm install
 
-Cette commande chargera les variables d'environnement depuis le fichier `.env` et démarrera l'application sur le port configuré (par défaut 3010).
-
-### Développement manuel
-
-```bash
+# Démarrage en mode développement
 npm run dev
 ```
 
-Cette commande démarrera l'application en mode développement en utilisant le port spécifié dans la variable d'environnement PORT, ou sur le port 3010 par défaut.
+L'application sera accessible sur http://localhost:3010
 
 ### Production
 
 ```bash
+# Installation des dépendances
+npm install
+
+# Construction de l'application
 npm run build
+
+# Démarrage en production
 npm run start
 ```
 
-Ces commandes compileront l'application pour la production et la démarreront sur le port spécifié dans la variable d'environnement PORT, ou sur le port 3010 par défaut.
+## Fonctionnalités principales
+
+- Gestion des accès (employés et visiteurs)
+- Suivi des présences
+- Gestion des rapports
+- Export des données (Excel, CSV)
+- Gestion des utilisateurs et des permissions
+- Configuration des horaires de travail
+- Gestion des jours fériés
 
 ## Maintenance
 
-### Protection des configurations
+### Mise à jour de la base de données
 
-Le fichier `.env` contient des informations sensibles et des configurations importantes. Il est automatiquement exclu du contrôle de version avec `.gitignore`. 
+Pour appliquer de nouvelles migrations :
+```bash
+npx prisma migrate deploy
+```
 
-Pour modifier les paramètres de l'application, modifiez directement ce fichier sans passer par un script ou un outil automatisé.
+Pour mettre à jour le schéma de la base de données :
+```bash
+npx prisma db push
+```
 
-### Migration de MongoDB vers MySQL
+### Scripts utilitaires
 
-Cette application a été migrée de MongoDB vers MySQL/Prisma. Pour plus d'informations sur la migration, consultez le document `docs/mongodb-mysql-migration.md`.
+- `npm run db:seed` : Réinitialise la base de données avec les données initiales
+- `npm run create-admin` : Crée un nouvel administrateur
+- `npm run reset-passwords` : Réinitialise les mots de passe des utilisateurs
+
+### Sécurité
+
+- Les mots de passe sont hachés avec bcrypt
+- Les sessions utilisent JWT avec rotation des tokens
+- Protection CSRF activée
+- Validation des entrées utilisateur
+- Journalisation des incidents de sécurité
+
+## Support
+
+Pour toute question ou assistance, contactez l'équipe de support à support@senator.com
 
 ## Licence
 
