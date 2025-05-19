@@ -24,14 +24,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" suppressHydrationWarning>
       <head>
         <meta name="description" content="Application de gestion de contrôle d'accès" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={`${inter.className} antialiased`}>
+      <body className={inter.className} suppressHydrationWarning>
         <Providers>
-          <main className="min-h-screen bg-background">
+          <main className="min-h-screen bg-background antialiased">
             {children}
           </main>
           <Toaster />
