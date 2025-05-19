@@ -24,15 +24,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr" suppressHydrationWarning>
+    <html lang="fr">
       <head>
-        <title>EMERAUDE DASHI</title>
         <meta name="description" content="Application de gestion de contrôle d'accès" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} antialiased`}>
         <Providers>
-          {children}
+          <main className="min-h-screen bg-background">
+            {children}
+          </main>
           <Toaster />
         </Providers>
       </body>

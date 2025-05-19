@@ -15,6 +15,7 @@ export default function TopMenu() {
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   
   // Get user initials from name
@@ -26,6 +27,11 @@ export default function TopMenu() {
   };
 
   const userInitials = getUserInitials(user?.name || 'User');
+
+  // Handle mounting state for theme
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleToggleSidebar = () => {
     window.dispatchEvent(toggleSidebarEvent);
@@ -50,14 +56,19 @@ export default function TopMenu() {
     setUserMenuOpen(false);
   };
 
+  // Ne pas rendre le contenu jusqu'à ce que le composant soit monté
+  if (!mounted) {
+    return null;
+  }
+
   return (
-    <header className={`border-b ${APP_CONFIG.theme.header.background} dark:bg-gray-950 dark:border-gray-800`}>
+    <header className={`border-b bg-[#0078D4] dark:bg-[#0078D4] dark:border-gray-800`}>
       <div className="flex items-center justify-between w-full px-4 py-3">
         <div className="flex items-center">
           <Button 
             variant="ghost" 
             size="icon" 
-            className="mr-3 text-white hover:bg-emerald-700 hover:text-white"
+            className="mr-3 text-white hover:bg-[#106EBE] hover:text-white"
             onClick={handleToggleSidebar}
             aria-label="Toggle menu"
           >
@@ -66,8 +77,8 @@ export default function TopMenu() {
           
           <Link href="/" className="flex items-center space-x-2">
             <div className="relative w-8 h-8">
-              <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-md"></div>
-              <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">E</div>
+              <div className="absolute inset-0 bg-gradient-to-br from-[#0078D4] to-[#106EBE] rounded-md"></div>
+              <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-[#0078D4] dark:text-[#2B88D8] font-bold text-lg">E</div>
             </div>
             <span className="text-lg font-medium text-white">{APP_CONFIG.name}</span>
           </Link>
@@ -77,7 +88,7 @@ export default function TopMenu() {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="text-white hover:bg-emerald-700 hover:text-white"
+            className="text-white hover:bg-[#106EBE] hover:text-white"
             aria-label="Notifications"
           >
             <Bell className="h-5 w-5" />
@@ -86,7 +97,7 @@ export default function TopMenu() {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="text-white hover:bg-emerald-700 hover:text-white"
+            className="text-white hover:bg-[#106EBE] hover:text-white"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Switch theme"
           >
@@ -96,12 +107,12 @@ export default function TopMenu() {
           {isAuthenticated ? (
             <div className="hidden md:block relative" ref={userMenuRef}>
               <button 
-                className="flex items-center space-x-2 text-white hover:text-emerald-200"
+                className="flex items-center space-x-2 text-white hover:text-[#2B88D8]"
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 role="button"
                 aria-haspopup="menu"
               >
-                <div className="w-8 h-8 rounded-full bg-emerald-600 flex items-center justify-center">
+                <div className="w-8 h-8 rounded-full bg-[#106EBE] flex items-center justify-center">
                   <span className="text-sm font-medium text-white">{userInitials}</span>
                 </div>
                 <div className="flex items-center">
@@ -147,7 +158,7 @@ export default function TopMenu() {
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="flex items-center gap-2 text-white border-white hover:bg-emerald-700 hover:text-white hover:border-emerald-700"
+                className="flex items-center gap-2 text-white border-white hover:bg-[#106EBE] hover:text-white hover:border-[#106EBE]"
               >
                 <User className="h-4 w-4" />
                 <span>Connexion</span>

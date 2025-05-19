@@ -2,9 +2,9 @@ export const APP_CONFIG = {
   name: 'EMERAUDE DASHI',
   version: '1.0.0',
   colors: {
-    primary: '#2E7D32', // Vert émeraude
-    secondary: '#1B5E20', // Vert émeraude foncé
-    accent: '#81C784', // Vert émeraude clair
+    primary: '#0078D4', // Bleu Microsoft
+    secondary: '#106EBE', // Bleu Microsoft foncé
+    accent: '#2B88D8', // Bleu Microsoft clair
     background: '#F5F5F5', // Gris très clair
     text: '#333333', // Gris foncé
     white: '#FFFFFF',
@@ -15,9 +15,9 @@ export const APP_CONFIG = {
   },
   theme: {
     header: {
-      background: '#2E7D32', // Vert émeraude
+      background: '#0078D4', // Bleu Microsoft
       text: '#FFFFFF',
-      hover: '#1B5E20' // Vert émeraude foncé
+      hover: '#106EBE' // Bleu Microsoft foncé
     }
   }
 } as const;
