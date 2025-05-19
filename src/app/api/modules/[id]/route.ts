@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import Module, { IModule } from '@/models/Module';
-import Permission from '@/models/Permission';
-import { connectToDatabase } from '@/lib/mongodb';
+import { prisma } from '@/lib/prisma';
+
+// Type pour les fonctions d'un module
+interface IModuleFunction {
+  name: string;
+  description: string;
+}
 
 // GET /api/modules/[id] - Récupérer un module par ID
 export async function GET(
@@ -12,17 +15,19 @@ export async function GET(
   try {
     const { id } = params;
     
-    if (!mongoose.isValidObjectId(id)) {
+    // Vérifier que l'ID est un nombre
+    const moduleId = parseInt(id);
+    if (isNaN(moduleId)) {
       return NextResponse.json(
         { error: 'ID de module invalide' },
         { status: 400 }
       );
     }
     
-    await connectToDatabase();
-    
-    // Conversion du type pour éviter les erreurs TypeScript
-    const moduleData = await (Module as any).findById(id).lean();
+    // Récupérer le module
+    const moduleData = await prisma.modules.findUnique({
+      where: { id: moduleId }
+    });
     
     if (!moduleData) {
       return NextResponse.json(
@@ -31,30 +36,17 @@ export async function GET(
       );
     }
     
-    // Utiliser un cast explicite pour id
-    const moduleObj = moduleData as any;
-    
     return NextResponse.json({
-      id: moduleObj._id.toString(),
-      name: moduleObj.name,
-      description: moduleObj.description,
-      functions: moduleObj.functions.map((fn: any) => ({
-        name: fn.name,
-        description: fn.description
-      })),
-      order: moduleObj.order,
-      createdAt: moduleObj.createdAt ? moduleObj.createdAt.toISOString() : null,
-      updatedAt: moduleObj.updatedAt ? moduleObj.updatedAt.toISOString() : null
+      id: moduleData.id.toString(),
+      name: moduleData.name,
+      description: moduleData.description,
+      functions: moduleData.functions ? JSON.parse(moduleData.functions.toString()) as IModuleFunction[] : [],
+      order: moduleData.order,
+      createdAt: moduleData.created_at ? moduleData.created_at.toISOString() : null,
+      updatedAt: moduleData.updated_at ? moduleData.updated_at.toISOString() : null
     });
   } catch (error) {
     console.error('Erreur lors de la récupération du module:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Une erreur s\'est produite lors de la récupération du module' },
@@ -72,7 +64,9 @@ export async function PUT(
     const { id } = params;
     const body = await request.json();
     
-    if (!mongoose.isValidObjectId(id)) {
+    // Vérifier que l'ID est un nombre
+    const moduleId = parseInt(id);
+    if (isNaN(moduleId)) {
       return NextResponse.json(
         { error: 'ID de module invalide' },
         { status: 400 }
@@ -87,10 +81,10 @@ export async function PUT(
       );
     }
     
-    await connectToDatabase();
-    
     // Vérifier si le module existe
-    const existingModule = await (Module as any).findById(id);
+    const existingModule = await prisma.modules.findUnique({
+      where: { id: moduleId }
+    });
     
     if (!existingModule) {
       return NextResponse.json(
@@ -101,9 +95,11 @@ export async function PUT(
     
     // Vérifier si le nouveau nom n'est pas déjà utilisé par un autre module
     if (body.name && body.name !== existingModule.name) {
-      const moduleWithSameName = await (Module as any).findOne({ 
-        name: body.name,
-        _id: { $ne: id }
+      const moduleWithSameName = await prisma.modules.findFirst({
+        where: {
+          name: body.name,
+          id: { not: moduleId }
+        }
       });
       
       if (moduleWithSameName) {
@@ -115,50 +111,28 @@ export async function PUT(
     }
     
     // Mettre à jour le module
-    const updatedFields: any = {};
-    
-    if (body.name) updatedFields.name = body.name;
-    if (body.description) updatedFields.description = body.description;
-    if (body.functions) updatedFields.functions = body.functions;
-    if (body.order !== undefined) updatedFields.order = body.order;
-    
-    const updatedModule = await (Module as any).findByIdAndUpdate(
-      id,
-      { $set: updatedFields },
-      { new: true, runValidators: true }
-    ).lean();
-    
-    if (!updatedModule) {
-      return NextResponse.json(
-        { error: 'Échec de la mise à jour du module' },
-        { status: 500 }
-      );
-    }
-    
-    // Cast explicite pour éviter les erreurs TypeScript
-    const moduleObj = updatedModule as any;
+    const updatedModule = await prisma.modules.update({
+      where: { id: moduleId },
+      data: {
+        ...(body.name && { name: body.name }),
+        ...(body.description && { description: body.description }),
+        ...(body.functions && { functions: JSON.stringify(body.functions) }),
+        ...(body.order !== undefined && { order: body.order }),
+        updated_at: new Date()
+      }
+    });
     
     return NextResponse.json({
-      id: moduleObj._id.toString(),
-      name: moduleObj.name,
-      description: moduleObj.description,
-      functions: moduleObj.functions.map((fn: any) => ({
-        name: fn.name,
-        description: fn.description
-      })),
-      order: moduleObj.order,
-      createdAt: moduleObj.createdAt ? moduleObj.createdAt.toISOString() : null,
-      updatedAt: moduleObj.updatedAt ? moduleObj.updatedAt.toISOString() : null
+      id: updatedModule.id.toString(),
+      name: updatedModule.name,
+      description: updatedModule.description,
+      functions: updatedModule.functions ? JSON.parse(updatedModule.functions.toString()) as IModuleFunction[] : [],
+      order: updatedModule.order,
+      createdAt: updatedModule.created_at ? updatedModule.created_at.toISOString() : null,
+      updatedAt: updatedModule.updated_at ? updatedModule.updated_at.toISOString() : null
     });
   } catch (error) {
     console.error('Erreur lors de la mise à jour du module:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Une erreur s\'est produite lors de la mise à jour du module' },
@@ -175,17 +149,19 @@ export async function DELETE(
   try {
     const { id } = params;
     
-    if (!mongoose.isValidObjectId(id)) {
+    // Vérifier que l'ID est un nombre
+    const moduleId = parseInt(id);
+    if (isNaN(moduleId)) {
       return NextResponse.json(
         { error: 'ID de module invalide' },
         { status: 400 }
       );
     }
     
-    await connectToDatabase();
-    
     // Vérifier si le module existe
-    const moduleItem = await (Module as any).findById(id);
+    const moduleItem = await prisma.modules.findUnique({
+      where: { id: moduleId }
+    });
     
     if (!moduleItem) {
       return NextResponse.json(
@@ -195,28 +171,30 @@ export async function DELETE(
     }
     
     // Vérifier si des permissions font référence à ce module
-    const permissionsWithModule = await (Permission as any).countDocuments({ moduleName: moduleItem.name });
+    const permissionsWithModule = await prisma.permission.count({
+      where: {
+        module: moduleItem.name
+      }
+    });
     
     if (permissionsWithModule > 0) {
       return NextResponse.json(
-        { error: 'Ce module est référencé par des permissions et ne peut pas être supprimé' },
+        { 
+          error: 'Ce module ne peut pas être supprimé car des permissions y font référence',
+          permissionsCount: permissionsWithModule
+        },
         { status: 400 }
       );
     }
     
     // Supprimer le module
-    await (Module as any).findByIdAndDelete(id);
+    await prisma.modules.delete({
+      where: { id: moduleId }
+    });
     
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Erreur lors de la suppression du module:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Une erreur s\'est produite lors de la suppression du module' },

@@ -20,7 +20,7 @@ import {
   Cell,
 } from 'recharts';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Clock, FileSpreadsheet, Radio } from 'lucide-react';
+import { Clock, FileSpreadsheet, Radio, Activity } from 'lucide-react';
 
 interface ReaderStat {
   reader: string;
@@ -29,6 +29,7 @@ interface ReaderStat {
 
 interface EventTypeStat {
   type: string;
+  rawType: string | null;
   count: number;
 }
 
@@ -70,6 +71,7 @@ export function CsvDataChart() {
   const [data, setData] = useState<CsvAnalysisData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeChart, setActiveChart] = useState<'hourly' | 'devices' | 'type'>('hourly');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -119,7 +121,7 @@ export function CsvDataChart() {
         <CardTitle className="text-base font-medium">
           <div className="flex items-center">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Analyse des données d'accès (Exportation 1.csv)
+            Analyse des données d'accès
           </div>
         </CardTitle>
       </CardHeader>
@@ -144,6 +146,9 @@ export function CsvDataChart() {
               </TabsTrigger>
               <TabsTrigger value="devices" className="flex items-center">
                 <Radio className="h-4 w-4 mr-1" /> Centrales/Lecteurs
+              </TabsTrigger>
+              <TabsTrigger value="events" className="flex items-center">
+                <Activity className="h-4 w-4 mr-1" /> Types d'événements
               </TabsTrigger>
             </TabsList>
             
@@ -258,6 +263,41 @@ export function CsvDataChart() {
               </div>
               <div className="mt-4 text-xs text-muted-foreground text-center">
                 Basé sur {data.totalEvents.toLocaleString()} événements enregistrés dans le fichier d'exportation
+              </div>
+            </TabsContent>
+            
+            <TabsContent value="events" className="min-h-[300px]">
+              <div>
+                <h3 className="text-sm font-medium mb-2">Types d'événements enregistrés</h3>
+                <div className="overflow-auto max-h-[300px]">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="px-4 py-2 text-left text-sm font-medium">Type</th>
+                        <th className="px-4 py-2 text-left text-sm font-medium">Détail (raw_event_type)</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium">Nombre</th>
+                        <th className="px-4 py-2 text-right text-sm font-medium">Pourcentage</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.eventTypeStats.map((stat, index) => (
+                        <tr key={index} className="border-b hover:bg-muted/30">
+                          <td className="px-4 py-2 text-sm">{stat.type || 'Non défini'}</td>
+                          <td className="px-4 py-2 text-sm">
+                            {stat.rawType || '-'}
+                          </td>
+                          <td className="px-4 py-2 text-sm text-right">{stat.count}</td>
+                          <td className="px-4 py-2 text-sm text-right">
+                            {((stat.count / data.totalEvents) * 100).toFixed(1)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div className="mt-4 text-xs text-muted-foreground text-center">
+                Tous les types d'événements sont inclus, avec leurs détails bruts
               </div>
             </TabsContent>
           </Tabs>

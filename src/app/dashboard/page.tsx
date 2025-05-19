@@ -1,88 +1,111 @@
-import React from 'react';
-import { Metadata } from "next";
-import Link from "next/link";
-import { DashboardMetrics } from "@/components/dashboard/dashboard-metrics";
-import { DashboardCharts } from "@/components/dashboard/dashboard-charts";
-import { DashboardHeader } from "@/components/dashboard/dashboard-header";
-import { PresenceTimeChart } from "@/components/dashboard/presence-time-chart";
-import { StatisticsSection } from '@/components/dashboard/StatisticsSection';
-import { RecentActivityList } from '@/components/dashboard/RecentActivityList';
-import { AttendanceTimeChart } from '@/components/dashboard/AttendanceTimeChart';
-import { DepartmentReaderChart } from '@/components/dashboard/DepartmentReaderChart';
-import { CsvDataChart } from '@/components/dashboard/CsvDataChart';
+'use client';
 
-export const metadata: Metadata = {
-  title: "Dashboard | EMERAUDE DASHI",
-  description: "Tableau de bord pour les données d'accès des employés",
-};
+import React, { useState, useEffect } from 'react';
+import { format, subDays } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { DateRange } from 'react-day-picker';
 
-async function getAccessData() {
-  try {
-    // Construire correctement l'URL complète
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3010';
-    const response = await fetch(`${baseUrl}/api/access-data`, { 
-      cache: 'no-store'
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Erreur API: ${response.status} ${response.statusText}`);
-    }
-    
-    return response.json();
-  } catch (error) {
-    console.error('Error fetching access data:', error);
-    // Renvoyer un objet avec des données par défaut au lieu de null
-    return {
-      presenceStats: {
-        daily: [],
-        weekly: [],
-        monthly: [],
-        yearly: []
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import StatisticsSection from '@/components/dashboard/StatisticsSection';
+// Import temporairement désactivé
+// import DepartmentReaderChart from '@/components/dashboard/DepartmentReaderChart';
+import HourlyTrafficChart from '@/components/dashboard/HourlyTrafficChart';
+// Import temporairement désactivé
+// import RecentActivityList from '@/components/dashboard/RecentActivityList';
+
+export default function DashboardPage() {
+  const [date, setDate] = useState<DateRange | undefined>(undefined);
+  const [loading, setLoading] = useState(true);
+
+  // Charger la date maximale au chargement
+  useEffect(() => {
+    const fetchMaxDate = async () => {
+      try {
+        // Récupérer la date maximale depuis l'API
+        const response = await fetch('/api/access-data?getMaxDate=true');
+        if (!response.ok) {
+          throw new Error('Erreur lors de la récupération de la date');
+        }
+        
+        const data = await response.json();
+        const maxDate = data.maxDate ? new Date(data.maxDate) : new Date();
+        const startDate = subDays(maxDate, 14); // Soustraire 14 jours (2 semaines)
+        
+        setDate({
+          from: startDate,
+          to: maxDate
+        });
+      } catch (error) {
+        console.error('Erreur lors de la récupération de la date maximale:', error);
+        // Fallback sur les 14 derniers jours si erreur
+        const endDate = new Date();
+        const startDate = subDays(endDate, 14);
+        setDate({
+          from: startDate,
+          to: endDate
+        });
+      } finally {
+        setLoading(false);
       }
     };
-  }
-}
+    
+    fetchMaxDate();
+  }, []);
 
-export default async function DashboardPage() {
-  const data = await getAccessData();
-  
-  // Si les données ne sont pas disponibles, afficher un message de chargement
-  if (!data) {
+  // Convertir les dates en format string pour les passer aux APIs
+  const startDate = date?.from ? format(date.from, 'yyyy-MM-dd') : undefined;
+  const endDate = date?.to ? format(date.to, 'yyyy-MM-dd') : undefined;
+
+  // Afficher un état de chargement pendant la récupération des dates
+  if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center">
-          <h2 className="text-xl font-medium mb-2">Chargement des données...</h2>
-          <p className="text-gray-500 dark:text-gray-400">Veuillez patienter pendant que nous récupérons les informations.</p>
+      <div className="flex-1 space-y-4 p-8 pt-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-3xl font-bold tracking-tight">Tableau de bord</h2>
+          <div className="flex items-center gap-2">
+            {/* Placeholder pour le chargement */}
+            <div className="h-10 w-48 bg-gray-200 animate-pulse rounded-md"></div>
+          </div>
+        </div>
+        
+        {/* Placeholder pour le chargement des statistiques */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-24 bg-gray-200 animate-pulse rounded-md"></div>
+          ))}
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-5 p-4 md:p-8">
+    <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold tracking-tight">Tableau de bord</h1>
+        <h2 className="text-3xl font-bold tracking-tight">Tableau de bord</h2>
+        <div className="flex items-center gap-2">
+          <DateRangePicker
+            value={date}
+            onChange={setDate}
+            align="end"
+          />
+        </div>
       </div>
       
-      <div className="mt-2">
-        <StatisticsSection />
-      </div>
+      {/* Statistiques globales */}
+      <StatisticsSection startDate={startDate} endDate={endDate} />
       
-      <div className="mt-4">
-        <AttendanceTimeChart />
-      </div>
-      
-      <div className="mt-4">
-        <DepartmentReaderChart />
-      </div>
-      
-      <div className="mt-4">
-        <CsvDataChart />
-      </div>
-      
-      <div className="mt-4 space-y-4">
-        <h2 className="text-lg font-medium">Activités récentes</h2>
-        <RecentActivityList />
+      {/* Graphiques et tableaux */}
+      <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-6">
+        {/* Statistiques par département et lecteur - temporairement désactivé
+        <DepartmentReaderChart startDate={startDate} endDate={endDate} /> */}
+        
+        {/* Répartition horaire et centrales/lecteurs */}
+        <HourlyTrafficChart startDate={startDate} endDate={endDate} />
+        
+        {/* Activités récentes - temporairement désactivé
+        <RecentActivityList startDate={startDate} endDate={endDate} limit={15} /> */}
+        
+        {/* Autres widgets peuvent être ajoutés ici */}
       </div>
     </div>
   );

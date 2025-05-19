@@ -85,7 +85,7 @@ interface Holiday {
   repeatsYearly: boolean;
 }
 
-interface AttendanceConfig {
+interface AttendanceParameters {
   id?: string;
   // Heures de travail
   startHour: string;
@@ -119,7 +119,7 @@ export default function WorkCalendarPage() {
   // États pour les différentes configurations
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [config, setConfig] = useState<AttendanceConfig>({
+  const [parameters, setParameters] = useState<AttendanceParameters>({
     startHour: '08:00',
     endHour: '17:00',
     dailyHours: 8,
@@ -153,25 +153,25 @@ export default function WorkCalendarPage() {
 
   // Charger la configuration au chargement
   useEffect(() => {
-    loadConfig();
+    loadParameters();
     loadHolidays();
   }, []);
 
   // Fonctions pour charger les données
-  const loadConfig = async () => {
+  const loadParameters = async () => {
     setIsLoading(true);
     try {
       const response = await fetch('/api/config/attendance');
       if (!response.ok) {
-        throw new Error('Erreur lors du chargement de la configuration');
+        throw new Error('Erreur lors du chargement des paramètres');
       }
       const data = await response.json();
-      setConfig(data);
+      setParameters(data);
     } catch (error) {
       console.error('Erreur:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de charger la configuration",
+        description: "Impossible de charger les paramètres",
         variant: "destructive"
       });
     } finally {
@@ -202,29 +202,29 @@ export default function WorkCalendarPage() {
   };
 
   // Fonction pour sauvegarder la configuration
-  const saveConfig = async () => {
+  const saveParameters = async () => {
     setIsSaving(true);
     try {
       const response = await fetch('/api/config/attendance', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
+        body: JSON.stringify(parameters)
       });
 
       if (!response.ok) {
-        throw new Error('Erreur lors de la sauvegarde de la configuration');
+        throw new Error('Erreur lors de la sauvegarde des paramètres');
       }
 
       toast({
         title: "Succès",
-        description: "Configuration sauvegardée avec succès",
+        description: "Paramètres sauvegardés avec succès",
         variant: "default"
       });
     } catch (error) {
       console.error('Erreur:', error);
       toast({
         title: "Erreur",
-        description: "Impossible de sauvegarder la configuration",
+        description: "Impossible de sauvegarder les paramètres",
         variant: "destructive"
       });
     } finally {
@@ -469,11 +469,11 @@ export default function WorkCalendarPage() {
           <h1 className="text-2xl font-bold">Gestion du temps et présences</h1>
         </div>
         <div className="flex space-x-2">
-          <Button variant="outline" onClick={loadConfig} disabled={isLoading}>
+          <Button variant="outline" onClick={loadParameters} disabled={isLoading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Actualiser
           </Button>
-          <Button onClick={saveConfig} disabled={isSaving}>
+          <Button onClick={saveParameters} disabled={isSaving}>
             <Save className="h-4 w-4 mr-2" />
             Enregistrer
           </Button>
@@ -520,8 +520,8 @@ export default function WorkCalendarPage() {
                   <Input
                     id="startHour"
                     type="time"
-                    value={config.startHour}
-                    onChange={(e) => setConfig({ ...config, startHour: e.target.value })}
+                    value={parameters.startHour}
+                    onChange={(e) => setParameters({ ...parameters, startHour: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -529,8 +529,8 @@ export default function WorkCalendarPage() {
                   <Input
                     id="endHour"
                     type="time"
-                    value={config.endHour}
-                    onChange={(e) => setConfig({ ...config, endHour: e.target.value })}
+                    value={parameters.endHour}
+                    onChange={(e) => setParameters({ ...parameters, endHour: e.target.value })}
                   />
                 </div>
               </div>
@@ -543,8 +543,8 @@ export default function WorkCalendarPage() {
                   min="1"
                   max="24"
                   step="0.5"
-                  value={config.dailyHours}
-                  onChange={(e) => setConfig({ ...config, dailyHours: Number(e.target.value) })}
+                  value={parameters.dailyHours}
+                  onChange={(e) => setParameters({ ...parameters, dailyHours: Number(e.target.value) })}
                 />
                 <p className="text-sm text-muted-foreground">
                   Définit le nombre d'heures standard dans une journée de travail
@@ -562,8 +562,8 @@ export default function WorkCalendarPage() {
                 </div>
                 <Switch
                   id="countWeekends"
-                  checked={config.countWeekends}
-                  onCheckedChange={(checked: boolean) => setConfig({ ...config, countWeekends: checked })}
+                  checked={parameters.countWeekends}
+                  onCheckedChange={(checked: boolean) => setParameters({ ...parameters, countWeekends: checked })}
                 />
               </div>
 
@@ -576,8 +576,8 @@ export default function WorkCalendarPage() {
                 </div>
                 <Switch
                   id="countHolidays"
-                  checked={config.countHolidays}
-                  onCheckedChange={(checked: boolean) => setConfig({ ...config, countHolidays: checked })}
+                  checked={parameters.countHolidays}
+                  onCheckedChange={(checked: boolean) => setParameters({ ...parameters, countHolidays: checked })}
                 />
               </div>
             </CardContent>
@@ -603,12 +603,12 @@ export default function WorkCalendarPage() {
                 </div>
                 <Switch
                   id="lunchBreak"
-                  checked={config.lunchBreak}
-                  onCheckedChange={(checked: boolean) => setConfig({ ...config, lunchBreak: checked })}
+                  checked={parameters.lunchBreak}
+                  onCheckedChange={(checked: boolean) => setParameters({ ...parameters, lunchBreak: checked })}
                 />
               </div>
 
-              {config.lunchBreak && (
+              {parameters.lunchBreak && (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -616,8 +616,8 @@ export default function WorkCalendarPage() {
                       <Input
                         id="lunchBreakStart"
                         type="time"
-                        value={config.lunchBreakStart}
-                        onChange={(e) => setConfig({ ...config, lunchBreakStart: e.target.value })}
+                        value={parameters.lunchBreakStart}
+                        onChange={(e) => setParameters({ ...parameters, lunchBreakStart: e.target.value })}
                       />
                     </div>
                     <div className="space-y-2">
@@ -625,8 +625,8 @@ export default function WorkCalendarPage() {
                       <Input
                         id="lunchBreakEnd"
                         type="time"
-                        value={config.lunchBreakEnd}
-                        onChange={(e) => setConfig({ ...config, lunchBreakEnd: e.target.value })}
+                        value={parameters.lunchBreakEnd}
+                        onChange={(e) => setParameters({ ...parameters, lunchBreakEnd: e.target.value })}
                       />
                     </div>
                   </div>
@@ -638,8 +638,8 @@ export default function WorkCalendarPage() {
                       type="number"
                       min="15"
                       max="120"
-                      value={config.lunchBreakDuration}
-                      onChange={(e) => setConfig({ ...config, lunchBreakDuration: Number(e.target.value) })}
+                      value={parameters.lunchBreakDuration}
+                      onChange={(e) => setParameters({ ...parameters, lunchBreakDuration: Number(e.target.value) })}
                     />
                     <p className="text-sm text-muted-foreground">
                       Cette durée sera déduite automatiquement du temps de présence
@@ -659,12 +659,12 @@ export default function WorkCalendarPage() {
                 </div>
                 <Switch
                   id="allowOtherBreaks"
-                  checked={config.allowOtherBreaks}
-                  onCheckedChange={(checked: boolean) => setConfig({ ...config, allowOtherBreaks: checked })}
+                  checked={parameters.allowOtherBreaks}
+                  onCheckedChange={(checked: boolean) => setParameters({ ...parameters, allowOtherBreaks: checked })}
                 />
               </div>
 
-              {config.allowOtherBreaks && (
+              {parameters.allowOtherBreaks && (
                 <div className="space-y-2">
                   <Label htmlFor="maxBreakTime">Temps de pause maximum par jour (minutes)</Label>
                   <Input
@@ -672,8 +672,8 @@ export default function WorkCalendarPage() {
                     type="number"
                     min="5"
                     max="60"
-                    value={config.maxBreakTime}
-                    onChange={(e) => setConfig({ ...config, maxBreakTime: Number(e.target.value) })}
+                    value={parameters.maxBreakTime}
+                    onChange={(e) => setParameters({ ...parameters, maxBreakTime: Number(e.target.value) })}
                   />
                   <p className="text-sm text-muted-foreground">
                     Limite le temps total des pauses supplémentaires (hors déjeuner)
@@ -902,18 +902,18 @@ export default function WorkCalendarPage() {
                     </div>
                     <Switch
                       id="roundAttendanceTime"
-                      checked={config.roundAttendanceTime}
-                      onCheckedChange={(checked: boolean) => setConfig({ ...config, roundAttendanceTime: checked })}
+                      checked={parameters.roundAttendanceTime}
+                      onCheckedChange={(checked: boolean) => setParameters({ ...parameters, roundAttendanceTime: checked })}
                     />
                   </div>
 
-                  {config.roundAttendanceTime && (
+                  {parameters.roundAttendanceTime && (
                     <>
                       <div className="space-y-2">
                         <Label htmlFor="roundingInterval">Intervalle d'arrondi (minutes)</Label>
                         <Select
-                          value={config.roundingInterval.toString()}
-                          onValueChange={(value) => setConfig({ ...config, roundingInterval: Number(value) })}
+                          value={parameters.roundingInterval.toString()}
+                          onValueChange={(value) => setParameters({ ...parameters, roundingInterval: Number(value) })}
                         >
                           <SelectTrigger id="roundingInterval">
                             <SelectValue placeholder="Sélectionner un intervalle" />
@@ -933,8 +933,8 @@ export default function WorkCalendarPage() {
                       <div className="space-y-2">
                         <Label htmlFor="roundingDirection">Direction d'arrondi</Label>
                         <Select
-                          value={config.roundingDirection}
-                          onValueChange={(value) => setConfig({ ...config, roundingDirection: value as 'up' | 'down' | 'nearest' })}
+                          value={parameters.roundingDirection}
+                          onValueChange={(value) => setParameters({ ...parameters, roundingDirection: value as 'up' | 'down' | 'nearest' })}
                         >
                           <SelectTrigger id="roundingDirection">
                             <SelectValue placeholder="Sélectionner une direction" />
@@ -966,8 +966,8 @@ export default function WorkCalendarPage() {
                       type="number"
                       min="1"
                       max="30"
-                      value={config.absenceRequestDeadline}
-                      onChange={(e) => setConfig({ ...config, absenceRequestDeadline: Number(e.target.value) })}
+                      value={parameters.absenceRequestDeadline}
+                      onChange={(e) => setParameters({ ...parameters, absenceRequestDeadline: Number(e.target.value) })}
                     />
                     <p className="text-sm text-muted-foreground">
                       Nombre de jours minimum avant une absence pour soumettre une demande
@@ -981,8 +981,8 @@ export default function WorkCalendarPage() {
                       type="number"
                       min="1"
                       max="30"
-                      value={config.overtimeRequestDeadline}
-                      onChange={(e) => setConfig({ ...config, overtimeRequestDeadline: Number(e.target.value) })}
+                      value={parameters.overtimeRequestDeadline}
+                      onChange={(e) => setParameters({ ...parameters, overtimeRequestDeadline: Number(e.target.value) })}
                     />
                     <p className="text-sm text-muted-foreground">
                       Nombre de jours maximum après des heures supplémentaires pour les déclarer

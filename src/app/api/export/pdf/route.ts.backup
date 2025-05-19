@@ -1,0 +1,479 @@
+import { NextRequest, NextResponse } from 'next/server';
+import puppeteer from 'puppeteer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import handlebars from 'handlebars';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+
+// Define route segment config with proper format
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Increased timeout for PDF generation
+
+// Register helper functions for Handlebars templates
+handlebars.registerHelper('formatDate', function(dateString) {
+  if (!dateString) return '';
+  return format(new Date(dateString), 'dd MMMM yyyy', { locale: fr });
+});
+
+handlebars.registerHelper('formatCurrentDate', function() {
+  return format(new Date(), 'dd MMMM yyyy à HH:mm', { locale: fr });
+});
+
+handlebars.registerHelper('currentYear', function() {
+  return new Date().getFullYear();
+});
+
+handlebars.registerHelper('formatNumber', function(value) {
+  if (value === undefined || value === null) return '0';
+  return parseFloat(value).toFixed(1);
+});
+
+handlebars.registerHelper('calculatePresenceRate', function(avgEmployeePerDay, totalEmployees) {
+  if (!avgEmployeePerDay || !totalEmployees || totalEmployees === 0) return '0';
+  return ((avgEmployeePerDay * 100) / totalEmployees).toFixed(1);
+});
+
+handlebars.registerHelper('formatDuration', function(durationMinutes) {
+  if (!durationMinutes) return '0h';
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h${minutes.toString().padStart(2, '0')}`;
+});
+
+handlebars.registerHelper('divide', function(a, b) {
+  return a / b;
+});
+
+handlebars.registerHelper('multiply', function(a, b) {
+  return a * b;
+});
+
+handlebars.registerHelper('subtract', function(a, b) {
+  return a - b;
+});
+
+handlebars.registerHelper('lessThan', function(a, b) {
+  return a < b;
+});
+
+handlebars.registerHelper('greaterThan', function(a, b) {
+  return a > b;
+});
+
+handlebars.registerHelper('greaterThanOrEqual', function(a, b) {
+  return a >= b;
+});
+
+handlebars.registerHelper('and', function(a, b) {
+  return a && b;
+});
+
+// Type interface for the Handlebars context
+interface HandlebarsContext {
+  data: {
+    daily?: Array<{ count?: number; duration?: number }>;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+handlebars.registerHelper('calculateAverageHoursPerEmployee', function(this: HandlebarsContext) {
+  const dailyData = this.data?.daily || [];
+  if (dailyData.length === 0) return "0 h";
+  
+  let totalEmployeeHours = 0;
+  let totalEmployeeCount = 0;
+  
+  dailyData.forEach(day => {
+    if (day?.count && day?.duration) {
+      totalEmployeeHours += day.duration;
+      totalEmployeeCount += day.count;
+    }
+  });
+  
+  if (totalEmployeeCount === 0) return "0 h";
+  return ((totalEmployeeHours / 60) / totalEmployeeCount).toFixed(1) + " h";
+});
+
+// Generate recommendations based on data
+function generateRecommendations(data: any): string[] {
+  const recommendations: string[] = [];
+  
+  // Vérifier le taux de présence moyen
+  if (data?.summary) {
+    const presenceRate = data.summary.avgEmployeePerDay * 100 / Math.max(1, data.summary.totalEmployees);
+    if (presenceRate < 70) {
+      recommendations.push("Le taux de présence moyen est inférieur à 70%. Envisagez une analyse des facteurs d'absences et des mesures pour améliorer la présence.");
+    }
+  }
+  
+  // Vérifier les tendances
+  if (data?.daily && data.daily.length >= 2) {
+    const midpoint = Math.floor(data.daily.length / 2);
+    const firstHalf = data.daily.slice(0, midpoint);
+    const secondHalf = data.daily.slice(midpoint);
+    
+    const firstHalfAvg = firstHalf.reduce((sum, day) => sum + (day?.duration || 0), 0) / firstHalf.length;
+    const secondHalfAvg = secondHalf.reduce((sum, day) => sum + (day?.duration || 0), 0) / secondHalf.length;
+    
+    const percentChange = ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100;
+    
+    if (percentChange < -5) {
+      recommendations.push(`Une tendance à la baisse du temps de présence a été détectée (${percentChange.toFixed(1)}%). Il serait utile d'identifier les causes potentielles de cette baisse.`);
+    }
+  }
+  
+  // Vérifier les données par groupe
+  if (data?.employeeStats) {
+    const lowPresenceGroups = data.employeeStats.filter(stat => stat.avgDuration / 60 < 6);
+    if (lowPresenceGroups.length > 0) {
+      recommendations.push(`${lowPresenceGroups.length} groupe(s) présentent un temps moyen de présence inférieur à 6h. Une attention particulière devrait être portée à: ${lowPresenceGroups.map(g => g.name).join(', ')}.`);
+    }
+  }
+  
+  // Recommandation générale si pas de problèmes spécifiques
+  if (recommendations.length === 0) {
+    recommendations.push("Les indicateurs de présence sont dans les normes attendues. Continuez le suivi régulier pour maintenir cette performance.");
+  }
+  
+  return recommendations;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    // Récupérer les données du rapport depuis la requête
+    const { data, dateRange, options } = await req.json();
+    
+    // Convertir les chaînes de date en objets Date pour les dateRange
+    const formattedDateRange = {
+      from: dateRange?.from ? new Date(dateRange.from) : undefined,
+      to: dateRange?.to ? new Date(dateRange.to) : undefined
+    };
+    
+    // Générer les recommandations
+    const recommendations = generateRecommendations(data);
+    
+    // Au lieu de renderToString, nous utilisons handlebars pour générer le HTML
+    // Charger le template HTML
+    const templatePath = path.resolve(process.cwd(), 'src/templates/presence-report-template.html');
+    const templateContent = fs.existsSync(templatePath) 
+      ? fs.readFileSync(templatePath, 'utf8')
+      : generateDefaultTemplate(); // Fonction de fallback si le template n'existe pas
+    
+    // Compiler le template
+    const template = handlebars.compile(templateContent);
+    
+    // Préparer les données de contexte pour le template
+    const context = {
+      data,
+      dateRange: formattedDateRange,
+      options: options || {
+        includeCharts: false, // Désactiver les graphiques par défaut
+        includeDetails: true,
+        includeRecommendations: true
+      },
+      recommendations,
+      generatedAt: new Date().toISOString()
+    };
+    
+    // Générer le HTML avec les données de contexte
+    const html = template(context);
+    
+    // Lancer un navigateur headless pour la conversion
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    try {
+      const page = await browser.newPage();
+      
+      // Configurer la page pour le format A4
+      await page.setViewport({
+        width: 1240,
+        height: 1754,
+        deviceScaleFactor: 1.5,
+      });
+      
+      // Injecter le HTML et attendre le chargement complet
+      await page.setContent(html, { 
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
+      
+      // Attendre que toutes les polices soient chargées
+      await page.evaluateHandle('document.fonts.ready');
+      
+      // Optimiser la mise en page pour réduire les espaces
+      await page.evaluate(() => {
+        // Réduire les marges entre sections
+        const style = document.createElement('style');
+        style.textContent = `
+          .section { margin-bottom: 15px; }
+          .page-break { margin: 0; padding: 0; }
+          .grid { gap: 10px; }
+        `;
+        document.head.appendChild(style);
+      });
+
+      // Ajuster les marges pour éviter les conflits visuels
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+        displayHeaderFooter: false,
+        preferCSSPageSize: true,
+        scale: 0.98,
+        timeout: 60000
+      });
+      
+      await browser.close();
+      
+      // Renvoyer le PDF généré
+      return new NextResponse(pdfBuffer, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="rapport_presence_${new Date().toISOString().split('T')[0]}.pdf"`
+        }
+      });
+    } catch (error) {
+      await browser.close();
+      throw error;
+    }
+  } catch (error) {
+    console.error('Erreur lors de la génération du PDF:', error);
+    return NextResponse.json({ error: 'Erreur lors de la génération du PDF' }, { status: 500 });
+  }
+}
+
+// Template de base si le fichier template n'existe pas
+function generateDefaultTemplate(): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Rapport de Temps de Présence</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            padding: 20mm;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #333;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+          }
+          .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007B65;
+            margin-bottom: 8px;
+          }
+          .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-top: 5px;
+          }
+          .section {
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+          }
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+            color: #007B65;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+          }
+          .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          }
+          .card-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #555;
+          }
+          .card-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007B65;
+          }
+          .card-description {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 20px;
+          }
+          .table-header {
+            background-color: #f5f5f5;
+          }
+          .table-header-cell {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            font-weight: bold;
+          }
+          .table-cell {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+          }
+          .page-break {
+            page-break-before: always;
+            height: 1px;
+          }
+          .footer {
+            margin-top: 30px;
+            font-size: 10px;
+            color: #999;
+            text-align: center;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="title">Rapport de Temps de Présence</div>
+          <div class="subtitle">
+            {{#if dateRange.from}}
+              Période du {{formatDate dateRange.from}} au {{formatDate dateRange.to}}
+            {{else}}
+              Période complète
+            {{/if}}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Vue d'ensemble</div>
+          <div class="grid">
+            <!-- Carte 1: Taux de présence moyen -->
+            <div class="card">
+              <div class="card-title">Taux de présence moyen</div>
+              <div class="card-value">
+                {{#if data.summary}}
+                  {{calculatePresenceRate data.summary.avgEmployeePerDay data.summary.totalEmployees}}%
+                {{else}}
+                  0%
+                {{/if}}
+              </div>
+              <div class="card-description">
+                {{#if data.summary}}
+                  {{data.summary.avgEmployeePerDay}} employés présents en moyenne sur {{data.summary.totalEmployees}} total
+                {{else}}
+                  Aucune donnée disponible
+                {{/if}}
+              </div>
+            </div>
+
+            <!-- Carte 2: Temps total de présence -->
+            <div class="card">
+              <div class="card-title">Temps total de présence</div>
+              <div class="card-value">
+                {{#if data.summary.totalHours}}
+                  {{formatNumber data.summary.totalHours}} h
+                {{else}}
+                  0 h
+                {{/if}}
+              </div>
+              <div class="card-description">
+                Sur une période de {{data.daily.length}} jours
+              </div>
+            </div>
+
+            <!-- Carte 3: Temps moyen par employé -->
+            <div class="card">
+              <div class="card-title">Temps moyen par employé</div>
+              <div class="card-value">
+                {{calculateAverageHoursPerEmployee}}
+              </div>
+              <div class="card-description">
+                Moyenne journalière par personne
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {{#if options.includeDetails}}
+        {{#if data.detailedLogs}}
+        {{#if data.detailedLogs.length}}
+        <div class="page-break"></div>
+        <div class="section">
+          <div class="section-title">Détails des présences</div>
+          <table class="table">
+            <thead class="table-header">
+              <tr>
+                <th class="table-header-cell">Date</th>
+                <th class="table-header-cell">Employé</th>
+                <th class="table-header-cell">Badge</th>
+                <th class="table-header-cell">Groupe</th>
+                <th class="table-header-cell">Entrée</th>
+                <th class="table-header-cell">Sortie</th>
+                <th class="table-header-cell">Durée (h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each data.detailedLogs}}
+              {{#if @index < 20}}
+              <tr>
+                <td class="table-cell">{{formatDate this.date}}</td>
+                <td class="table-cell">{{this.name}}</td>
+                <td class="table-cell">{{this.badge_number}}</td>
+                <td class="table-cell">{{this.groupe}}</td>
+                <td class="table-cell">{{this.first_badge}}</td>
+                <td class="table-cell">{{this.last_badge}}</td>
+                <td class="table-cell">{{formatDuration this.duration}}</td>
+              </tr>
+              {{/if}}
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+        {{/if}}
+        {{/if}}
+        {{/if}}
+
+        <div class="footer">
+          <div>
+            Rapport généré le {{formatCurrentDate}}
+          </div>
+          <div>
+            Senator InvesTech © {{currentYear}} - Tous droits réservés
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// Configuration pour les requêtes volumineuses
+// Note: Cette config n'est plus utilisée de cette façon dans App Router
+// Les limites sont maintenant gérées par la config route segment 
+}

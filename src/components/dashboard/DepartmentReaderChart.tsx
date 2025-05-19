@@ -1,161 +1,221 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import axios from 'axios';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
+  PieChart,
+  Pie,
+  Cell,
   ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
   Tooltip,
   Legend,
-  CartesianGrid,
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis
 } from 'recharts';
-import { Building, DoorOpen } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Building } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 
-interface Reader {
-  deviceId: string;
-  location: string;
+interface DepartmentReaderChartProps {
+  startDate?: string;
+  endDate?: string;
+}
+
+interface DepartmentData {
+  departmentName: string;
   count: number;
 }
 
-interface DepartmentReaderData {
-  department: string;
-  readers: Reader[];
-  total: number;
+interface ReaderStat {
+  reader: string;
+  count: number;
 }
 
-export function DepartmentReaderChart() {
-  const [data, setData] = useState<DepartmentReaderData[]>([]);
+// Palette de couleurs pour le graphique
+const COLORS = ["#3b82f6", "#4f46e5", "#4ade80", "#f97316", "#8b5cf6"];
+
+const DepartmentReaderChart: React.FC<DepartmentReaderChartProps> = ({ startDate, endDate }) => {
+  const [departmentData, setDepartmentData] = useState<DepartmentData[]>([]);
+  const [readerStats, setReaderStats] = useState<ReaderStat[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      
       try {
-        setLoading(true);
-        const response = await axios.get<DepartmentReaderData[]>('/api/readers/usage');
+        // Construire l'URL avec les paramètres de date
+        let url = '/api/csv-analysis';
+        const params = new URLSearchParams();
         
-        // Limiter aux 8 premiers départements pour une meilleure lisibilité
-        const topDepartments = response.data.slice(0, 8);
+        if (startDate) {
+          params.append('startDate', startDate);
+        }
         
-        // Préparer les données pour le graphique
-        setData(topDepartments);
-        setError(null);
+        if (endDate) {
+          params.append('endDate', endDate);
+        }
+        
+        const queryString = params.toString();
+        if (queryString) {
+          url += `?${queryString}`;
+        }
+        
+        const response = await fetch(url, {
+          headers: {
+            'x-test-bypass-auth': 'admin'
+          }
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Erreur API: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        console.log('API response data - departments/readers:', data);
+        
+        // Traitement des données de groupes/départements
+        if (Array.isArray(data.groupStats)) {
+          const processedDepartmentData = data.groupStats.map(stat => ({
+            departmentName: stat.group,
+            count: Number(stat.count)
+          }));
+          setDepartmentData(processedDepartmentData);
+        } else {
+          console.error('Format de données départements invalide:', data.groupStats);
+          setDepartmentData([]);
+        }
+        
+        // Traitement des données de lecteurs
+        if (Array.isArray(data.readerStats)) {
+          const processedReaderStats = data.readerStats.map(stat => ({
+            reader: stat.reader,
+            count: Number(stat.count)
+          }));
+          setReaderStats(processedReaderStats);
+        } else {
+          console.error('Format de données lecteurs invalide:', data.readerStats);
+          setReaderStats([]);
+        }
+        
       } catch (err) {
-        console.error('Erreur lors de la récupération des données de lecteurs:', err);
-        setError('Impossible de charger les données de lecteurs');
+        console.error('Erreur lors de la récupération des données:', err);
+        setError('Impossible de charger les données. Veuillez réessayer plus tard.');
       } finally {
         setLoading(false);
       }
     };
-
-    fetchData();
-  }, []);
-
-  // Transformer les données pour le graphique
-  const chartData = data.map(item => {
-    // Pour chaque département, récupérer le lecteur le plus utilisé
-    const topReader = item.readers[0] || { deviceId: '', location: '', count: 0 };
     
-    return {
-      department: item.department,
-      count: item.total,
-      topReader: topReader.location,
-      topReaderCount: topReader.count,
-      topReaderPercentage: Math.round((topReader.count / item.total) * 100)
-    };
-  });
+    fetchData();
+  }, [startDate, endDate]);
+
+  const CustomTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div className="p-2 bg-white dark:bg-gray-900 border rounded-md shadow-md">
+          <p className="font-medium">{data.departmentName}</p>
+          <p className="text-sm">{data.count} accès</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Rendu du contenu en fonction de l'état de chargement
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <div className="space-y-2">
+          <Skeleton className="h-[300px] w-full" />
+        </div>
+      );
+    }
+
+    if (error) {
+      return (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      );
+    }
+
+    if (departmentData.length === 0) {
+      return (
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>Aucune donnée de département disponible.</AlertDescription>
+        </Alert>
+      );
+    }
+
+    return (
+      <div className="flex flex-col md:flex-row items-center">
+        <div className="w-full md:w-1/2 h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={departmentData}
+                cx="50%"
+                cy="50%"
+                outerRadius={90}
+                innerRadius={40}
+                paddingAngle={2}
+                dataKey="count"
+                nameKey="departmentName"
+                label={(entry) => entry.departmentName}
+                labelLine={false}
+              >
+                {departmentData.map((entry, index) => (
+                  <Cell 
+                    key={`cell-${index}`} 
+                    fill={COLORS[index % COLORS.length]} 
+                  />
+                ))}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="w-full md:w-1/2 mt-4 md:mt-0">
+          <div className="space-y-4">
+            {departmentData.map((dept, index) => (
+              <div key={dept.departmentName} className="flex items-center">
+                <div
+                  className="h-3 w-3 rounded-full mr-2"
+                  style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                />
+                <div className="flex-1 flex justify-between items-center">
+                  <span className="text-sm">{dept.departmentName}</span>
+                  <span className="text-sm font-medium">{dept.count}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <Card className="col-span-4">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-base font-medium">
-          <div className="flex items-center">
-            <Building className="mr-2 h-4 w-4" />
-            Utilisation des lecteurs par département
-          </div>
+    <Card className="col-span-3">
+      <CardHeader>
+        <CardTitle className="flex items-center">
+          <Building className="mr-2 h-5 w-5" />
+          Répartition par département
         </CardTitle>
+        <CardDescription>Analyse de la répartition des accès par département</CardDescription>
       </CardHeader>
-      <CardContent>
-        {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-[250px] w-full" />
-          </div>
-        ) : error ? (
-          <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
-            {error}
-          </div>
-        ) : data.length === 0 ? (
-          <div className="flex h-[250px] items-center justify-center text-sm text-muted-foreground">
-            Aucune donnée disponible
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart
-              data={chartData}
-              margin={{ top: 10, right: 30, left: 20, bottom: 60 }}
-              barSize={24}
-            >
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-              <XAxis 
-                dataKey="department"
-                stroke="#888888"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                angle={-45}
-                textAnchor="end"
-                height={50}
-              />
-              <YAxis
-                stroke="#888888"
-                fontSize={12}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(value) => `${value}`}
-              />
-              <Tooltip
-                formatter={(value, name) => [`${value} accès`, 'Total']}
-                labelFormatter={(label) => `Département: ${label}`}
-                cursor={{ fill: 'rgba(200, 200, 200, 0.1)' }}
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                      <div className="rounded-lg shadow-md bg-white dark:bg-gray-800 p-3 border border-gray-200 dark:border-gray-700">
-                        <p className="font-medium">{label}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">Total: {data.count} accès</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          Lecteur principal: {data.topReader}
-                        </p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {data.topReaderCount} accès ({data.topReaderPercentage}%)
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Legend />
-              <Bar
-                dataKey="count"
-                name="Nombre d'accès"
-                fill="#0e7490"
-                radius={[4, 4, 0, 0]}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-        <div className="mt-2 text-xs text-muted-foreground text-center flex items-center justify-center">
-          <DoorOpen className="h-3 w-3 mr-1" />
-          Les départements avec la plus forte activité d'accès
-        </div>
-      </CardContent>
+      <CardContent>{renderContent()}</CardContent>
     </Card>
   );
-} 
+};
+
+export default DepartmentReaderChart; 

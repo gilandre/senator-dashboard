@@ -18,14 +18,15 @@ type PresenceData = {
     averageHours: number;
   }[];
   weeklyData?: {
-    weekStart: string;
-    weekEnd: string;
+    weekId: string;
+    weekLabel: string;
     totalHours: number;
     employeeCount: number;
     averageHours: number;
   }[];
   monthlyData?: {
-    month: string;
+    monthId: string;
+    monthLabel: string;
     totalHours: number;
     employeeCount: number;
     averageHours: number;
@@ -78,14 +79,14 @@ export function PresenceTimeChart({ data }: PresenceChartProps) {
 
   const formattedWeeklyData = data.weeklyData?.map(week => ({
     ...week,
-    label: formatWeekRange(week.weekStart, week.weekEnd),
+    label: week.weekLabel,
     totalHoursFormatted: week.totalHours.toFixed(1),
     averageHoursFormatted: week.averageHours.toFixed(1),
   }));
 
   const formattedMonthlyData = data.monthlyData?.map(month => ({
     ...month,
-    label: formatMonth(month.month),
+    label: month.monthLabel,
     totalHoursFormatted: month.totalHours.toFixed(1),
     averageHoursFormatted: month.averageHours.toFixed(1),
   }));

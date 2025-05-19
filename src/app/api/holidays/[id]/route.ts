@@ -1,7 +1,5 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import Holiday from '@/models/Holiday';
-import { connectToDatabase } from '@/lib/mongodb';
+import { prisma } from '@/lib/prisma';
 
 // DELETE /api/holidays/[id] - Supprimer un jour férié par ID
 export async function DELETE(
@@ -11,35 +9,33 @@ export async function DELETE(
   try {
     const { id } = params;
     
-    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    if (!id) {
       return NextResponse.json(
         { error: 'ID invalide' },
         { status: 400 }
       );
     }
     
-    await connectToDatabase();
+    // Vérifier si le jour férié existe
+    const holiday = await prisma.holidays.findUnique({
+      where: { id: parseInt(id) }
+    });
     
-    // Rechercher et supprimer le jour férié
-    const result = await Holiday.findByIdAndDelete(id);
-    
-    if (!result) {
+    if (!holiday) {
       return NextResponse.json(
         { error: 'Jour férié non trouvé' },
         { status: 404 }
       );
     }
     
+    // Supprimer le jour férié
+    await prisma.holidays.delete({
+      where: { id: parseInt(id) }
+    });
+    
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Erreur lors de la suppression du jour férié:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Une erreur s\'est produite lors de la suppression du jour férié' },

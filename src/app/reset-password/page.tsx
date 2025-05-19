@@ -5,6 +5,9 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Eye, EyeOff, KeyRound, ArrowLeft, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { APP_CONFIG } from '@/config/app';
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -94,15 +97,18 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-emerald-50 to-white dark:from-gray-900 dark:to-gray-800">
-      {/* Header */}
-      <header className="w-full py-6 px-4 flex justify-center">
-        <div className="flex items-center space-x-2">
-          <div className="relative w-10 h-10">
-            <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-md shadow-lg"></div>
-            <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">S</div>
+    <div className="min-h-screen flex flex-col">
+      <header className="border-b bg-white dark:bg-gray-950 dark:border-gray-800">
+        <div className="flex items-center justify-between w-full px-4 py-3">
+          <div className="flex items-center">
+            <Link href="/" className="flex items-center space-x-2">
+              <div className="relative w-8 h-8">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-md"></div>
+                <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">E</div>
+              </div>
+              <span className="text-xl font-bold text-gray-900 dark:text-white">{APP_CONFIG.name}</span>
+            </Link>
           </div>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">SENATOR INVESTECH</span>
         </div>
       </header>
 
@@ -253,8 +259,8 @@ export default function ResetPasswordPage() {
       </main>
 
       {/* Footer */}
-      <footer className="py-6 px-4 text-center text-sm text-gray-600 dark:text-gray-400">
-        <p>&copy; {new Date().getFullYear()} QUANTINNUM EA. Tous droits réservés.</p>
+      <footer className="mt-auto py-4 text-center text-sm text-gray-600 dark:text-gray-400">
+        <p>&copy; {new Date().getFullYear()} {APP_CONFIG.name}. Tous droits réservés.</p>
       </footer>
     </div>
   );

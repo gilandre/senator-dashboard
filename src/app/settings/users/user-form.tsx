@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import axios from "axios"
-import { User } from "./columns"
+import { User, USER_STATUSES } from "./columns"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -29,6 +29,7 @@ interface UserFormProps {
   isOpen: boolean
   onClose: () => void
   onSave: (userData: any) => Promise<void> | void
+  isProcessing?: boolean
 }
 
 interface Profile {
@@ -37,13 +38,50 @@ interface Profile {
   description: string
 }
 
-export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
+// Format standardisé des données soumises
+interface UserFormData {
+  name: string;
+  email: string;
+  password: string;
+  status: string;
+  profileId: string; // Pour l'UI
+  profileIds?: number[]; // Pour l'API
+}
+
+// Interface pour les données d'API
+interface UserApiData {
+  name: string;
+  email: string;
+  password?: string;
+  status: string;
+  profileIds?: number[];
+  id?: string | number;
+}
+
+// Fonction utilitaire pour le logging
+const logInfo = (message: string, data?: any) => {
+  if (process.env.NODE_ENV === 'development') {
+    if (data) {
+      console.log(`[UserForm] ${message}:`, data);
+    } else {
+      console.log(`[UserForm] ${message}`);
+    }
+  }
+};
+
+// Fonction utilitaire pour le logging d'erreurs
+const logError = (message: string, error?: any) => {
+  console.error(`[UserForm] ${message}`, error || '');
+};
+
+export function UserForm({ user, isOpen, onClose, onSave, isProcessing = false }: UserFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loadingProfiles, setLoadingProfiles] = useState(false)
   const [error, setError] = useState("")
   const [passwordRequirements, setPasswordRequirements] = useState<string[]>([])
-  const [formData, setFormData] = useState({
+  const [loadingRequirements, setLoadingRequirements] = useState(false)
+  const [formData, setFormData] = useState<UserFormData>({
     name: "",
     email: "",
     password: "",
@@ -59,6 +97,7 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
 
   const fetchPasswordRequirements = async () => {
     try {
+      setLoadingRequirements(true)
       const response = await axios.get('/api/security/settings')
       const securitySettings = response.data
       
@@ -84,10 +123,28 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
           requirements.push("Au moins un caractère spécial (!@#$%^&*)")
         }
         
+        if (policy.preventReuse > 0) {
+          requirements.push(`Ne peut pas être identique aux ${policy.preventReuse} derniers mots de passe utilisés`)
+        }
+        
+        if (policy.expiryDays > 0) {
+          requirements.push(`Expire après ${policy.expiryDays} jours`)
+        }
+        
         setPasswordRequirements(requirements)
       }
     } catch (error) {
       console.error("Erreur lors du chargement des exigences de mot de passe:", error)
+      // Définir les exigences par défaut en cas d'échec
+      setPasswordRequirements([
+        "Longueur minimale: 8 caractères",
+        "Au moins une lettre majuscule (A-Z)",
+        "Au moins une lettre minuscule (a-z)",
+        "Au moins un chiffre (0-9)",
+        "Au moins un caractère spécial (!@#$%^&*)"
+      ])
+    } finally {
+      setLoadingRequirements(false)
     }
   }
 
@@ -95,38 +152,94 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
     setLoadingProfiles(true)
     try {
       const response = await axios.get('/api/profiles')
-      console.log('Profils chargés:', response.data)
       
-      // Filtrer les profils actifs côté client si nécessaire
-      const activeProfiles = response.data.profiles ? 
-        response.data.profiles.filter((profile: any) => profile.isActive !== false) : 
-        [];
+      // Log détaillé de la structure des profils
+      console.log('==== STRUCTURE COMPLÈTE DES PROFILS ====');
+      console.log(JSON.stringify(response.data, null, 2));
       
-      setProfiles(activeProfiles || [])
+      // Si la réponse contient des profils
+      if (response.data) {
+        const profilesData = response.data.profiles || (Array.isArray(response.data) ? response.data : []);
+        
+        // Log des détails du premier profil (comme exemple)
+        if (profilesData.length > 0) {
+          console.log('==== EXEMPLE DE STRUCTURE D\'UN PROFIL ====');
+          console.log(JSON.stringify(profilesData[0], null, 2));
+        }
+      }
+      
+      // Continuer avec le code existant
+      logInfo('Profils chargés', response.data)
+      
+      // Standardiser le format des profils
+      let activeProfiles: Profile[] = [];
+      if (response.data.profiles) {
+        // Si la réponse a une propriété profiles (array)
+        activeProfiles = response.data.profiles
+          .filter((profile: any) => profile.isActive !== false)
+          .map((profile: any) => ({
+            ...profile,
+            id: String(profile.id), // Standardiser en string
+            name: profile.name,
+            description: profile.description || ""
+          }));
+      } else if (Array.isArray(response.data)) {
+        // Si la réponse est directement un array
+        activeProfiles = response.data
+          .filter((profile: any) => profile.isActive !== false)
+          .map((profile: any) => ({
+            ...profile,
+            id: String(profile.id), // Standardiser en string
+            name: profile.name,
+            description: profile.description || ""
+          }));
+      }
+      
+      setProfiles(activeProfiles)
       
       // Si aucun profil n'est défini et des profils sont disponibles, utiliser le premier profil par défaut
       if (!formData.profileId && activeProfiles && activeProfiles.length > 0) {
         setFormData(prev => ({ ...prev, profileId: activeProfiles[0].id }))
       }
     } catch (error) {
-      console.error("Erreur lors du chargement des profils:", error)
+      logError("Erreur lors du chargement des profils", error)
       setError("Impossible de charger les profils. Veuillez réessayer.")
     } finally {
       setLoadingProfiles(false)
     }
   }
 
+  logInfo('User data for edit', user)
+  
   useEffect(() => {
     if (user) {
+      logInfo('Setting form data from user', user)
+      
+      // Normalisation du statut
+      const normalizedStatus = user.status && typeof user.status === 'string' 
+        ? user.status.toLowerCase() 
+        : "active";
+        
+      // Vérifier que le statut est valide parmi les options disponibles
+      const validStatus = normalizedStatus in USER_STATUSES
+        ? normalizedStatus
+        : "active";
+      
       setFormData({
         name: user.name,
         email: user.email,
         password: "", // Don't populate password field for security
-        status: user.status,
+        status: validStatus,
         profileId: user.profileId || ""
       })
+      
+      // Si le nom du profil est disponible, l'afficher dans la console
+      if (user.profileName) {
+        logInfo('Profile selected', user.profileName)
+      }
     } else {
       // Reset form for new user
+      logInfo('Resetting form for new user')
       setFormData({
         name: "",
         email: "",
@@ -151,24 +264,63 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
     setIsSubmitting(true)
     setError("")
     
-    // Si aucun profil n'est sélectionné, afficher une alerte
-    if (!formData.profileId) {
-      setError("Veuillez sélectionner un profil.")
-      setIsSubmitting(false)
-      return
+    logInfo('Soumission du formulaire avec les données', formData)
+    
+    // Validation étendue
+    const validationErrors: string[] = [];
+    
+    if (!formData.name.trim()) {
+      validationErrors.push("Le nom est requis");
     }
     
-    // If editing a user and password is empty, don't include it in the update
-    const dataToSubmit = user && !formData.password
-      ? { ...formData, id: user.id, password: undefined }
-      : { ...formData, id: user?.id }
+    if (!formData.email.trim()) {
+      validationErrors.push("L'email est requis");
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      validationErrors.push("Veuillez saisir un email valide");
+    }
     
-    console.log('Données soumises:', dataToSubmit)
+    if (!user && !formData.password) {
+      validationErrors.push("Le mot de passe est requis pour un nouvel utilisateur");
+    }
+    
+    if (!formData.profileId) {
+      validationErrors.push("Veuillez sélectionner un profil.");
+    }
+    
+    if (validationErrors.length > 0) {
+      setError(validationErrors.join("\n"));
+      setIsSubmitting(false);
+      return;
+    }
+    
+    const selectedProfile = profiles.find(p => p.id === formData.profileId);
+    logInfo('Profil sélectionné', selectedProfile?.name);
+    
+    // Préparation des données à envoyer à l'API dans le format attendu
+    const apiData: UserApiData = {
+      name: formData.name,
+      email: formData.email,
+      password: formData.password,
+      status: formData.status.toLowerCase(),
+      profileIds: formData.profileId ? [parseInt(formData.profileId)] : undefined,
+    };
+    
+    // Ajouter l'ID utilisateur lors de l'édition
+    if (user?.id) {
+      apiData.id = user.id;
+    }
+    
+    // Si on édite et le mot de passe est vide, le supprimer
+    if (user && !formData.password) {
+      apiData.password = undefined;
+    }
+    
+    logInfo('Données standardisées à envoyer à l\'API', apiData);
     
     try {
-      await onSave(dataToSubmit)
+      await onSave(apiData);
     } catch (error: any) {
-      console.error("Error saving user:", error)
+      logError("Error saving user", error);
       if (error.response && error.response.data) {
         if (error.response.data.details && Array.isArray(error.response.data.details)) {
           // Afficher chaque erreur sur une nouvelle ligne pour plus de clarté
@@ -266,6 +418,24 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
               )}
             </div>
             <div className="grid gap-2">
+              <Label htmlFor="status">Statut</Label>
+              <Select
+                value={formData.status}
+                onValueChange={(value) => handleSelectChange("status", value)}
+              >
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Sélectionner un statut" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(USER_STATUSES).map(([value, { label }]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid gap-2">
               <Label htmlFor="profileId">Profil d'utilisateur</Label>
               <Select
                 value={formData.profileId}
@@ -294,28 +464,21 @@ export function UserForm({ user, isOpen, onClose, onSave }: UserFormProps) {
                 </p>
               )}
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="status">Statut</Label>
-              <Select
-                value={formData.status}
-                onValueChange={(value) => handleSelectChange("status", value)}
-              >
-                <SelectTrigger id="status">
-                  <SelectValue placeholder="Sélectionner un statut" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">Actif</SelectItem>
-                  <SelectItem value="inactive">Inactif</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button 
+              type="button" 
+              variant="outline" 
+              onClick={onClose}
+              disabled={isSubmitting || isProcessing}
+            >
               Annuler
             </Button>
-            <Button type="submit" disabled={isSubmitting || profiles.length === 0}>
-              {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            <Button 
+              type="submit" 
+              disabled={isSubmitting || isProcessing || profiles.length === 0}
+            >
+              {(isSubmitting || isProcessing) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {user ? "Mettre à jour" : "Créer"}
             </Button>
           </DialogFooter>

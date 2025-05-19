@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import User from '@/models/User';
-import UserActivity from '@/models/UserActivity';
-import { connectToDatabase } from '@/lib/mongodb';
-import mongoose from 'mongoose';
+import { prisma } from '@/lib/prisma';
+import * as bcrypt from 'bcryptjs';
 
 export async function POST(request: Request) {
   try {
@@ -18,12 +16,12 @@ export async function POST(request: Request) {
       );
     }
     
-    await connectToDatabase();
+    // Rechercher l'utilisateur par email avec Prisma
+    const user = await prisma.user.findUnique({
+      where: { email }
+    });
     
-    // Rechercher l'utilisateur par email
-    const user = await User.findOne({ email });
-    
-    // Si l'utilisateur n'existe pas ou est inactif
+    // Si l'utilisateur n'existe pas
     if (!user) {
       return NextResponse.json(
         { error: 'Identifiants incorrects' }, 
@@ -40,7 +38,7 @@ export async function POST(request: Request) {
     }
     
     // Vérifier le mot de passe
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
       return NextResponse.json(
@@ -49,23 +47,25 @@ export async function POST(request: Request) {
       );
     }
     
-    // Mettre à jour la date de dernière connexion
-    user.lastLogin = new Date();
-    await user.save();
+    // Mettre à jour la date de dernière connexion (si le champ existe dans Prisma)
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { updated_at: new Date() }
+    });
     
     // Enregistrer l'activité de connexion
-    const activity = new UserActivity({
-      userId: user._id,
-      userName: user.name,
-      action: 'login',
-      details: `Connexion depuis ${request.headers.get('user-agent') || 'navigateur inconnu'}`
+    await prisma.user_activities.create({
+      data: {
+        user_id: user.id,
+        action: 'login',
+        details: `Connexion depuis ${request.headers.get('user-agent') || 'navigateur inconnu'}`
+      }
     });
-    await activity.save();
 
     // Définir un cookie d'authentification
     cookies().set({
       name: 'auth',
-      value: `${(user._id as mongoose.Types.ObjectId).toString()}-${user.role}`,
+      value: `${user.id}-${user.role}`,
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     // Renvoyer les données utilisateur sans le mot de passe
     return NextResponse.json({
       user: {
-        id: (user._id as mongoose.Types.ObjectId).toString(),
+        id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,

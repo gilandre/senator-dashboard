@@ -1,129 +1,148 @@
-// Version Edge-compatible du service d'incidents de sécurité (sans mongoose)
+// Service d'incidents de sécurité avec Prisma
+import { prisma } from "../prisma";
+
+// Type d'incidents de sécurité
+type SecurityIncidentType = 
+  | 'failed_login' 
+  | 'successful_login'
+  | 'password_change'
+  | 'account_locked'
+  | 'account_unlocked'
+  | 'unauthorized_access'
+  | 'security_setting_change'
+  | 'admin_action'
+  | 'system_error';
+
+// Niveau de gravité des incidents - adapté aux valeurs acceptées par Prisma
+type SecurityIncidentSeverity = 'info' | 'warning' | 'critical' | 'resolved';
+
+// Mapping des valeurs de sévérité vers les valeurs enum Prisma
+const severityToPrisma = {
+  'info': 'info',
+  'warning': 'warning',
+  'critical': 'critical',
+  'resolved': 'resolved'
+};
+
 /**
  * Service pour enregistrer et gérer les incidents de sécurité
- * Version compatible avec Edge Runtime
  */
 export class SecurityIncidentService {
   /**
-   * Enregistre un incident de sécurité (version Edge)
-   * Au lieu d'enregistrer en base de données, cette version log les incidents
-   * qui peuvent être collectés ultérieurement
+   * Journalise un incident de sécurité
    */
   static async logIncident(
-    type: string,
-    details: string,
+    type: SecurityIncidentType,
+    description: string,
     ipAddress: string,
-    status: 'resolved' | 'blocked' | 'alert' | 'locked' | 'info' = 'info',
-    userId?: string | null,
-    userEmail?: string | null
-  ): Promise<any> {
-    // Dans Edge Runtime, nous ne pouvons pas utiliser mongoose
-    // Donc on log simplement l'incident pour que ce soit visible
-    console.log(`[SECURITY INCIDENT] ${type}: ${details} | IP: ${ipAddress} | Status: ${status} | User: ${userEmail || 'unknown'}`);
-    
-    // Si nécessaire, on pourrait appeler une API via fetch pour enregistrer l'incident
-    
-    // Retourner une structure similaire à celle attendue
-    return {
-      type,
-      details,
-      ipAddress,
-      status,
-      userId,
-      userEmail,
-      timestamp: new Date()
-    };
+    severity: SecurityIncidentSeverity = 'info',
+    userId?: string | null | number,
+    userEmail?: string,
+    additionalData?: any
+  ) {
+    try {
+      console.log(`[SECURITY INCIDENT] ${type}: ${description} | IP: ${ipAddress} | Status: ${severity}${userId ? ' | User ID: ' + userId : ''}${userEmail ? ' | User: ' + userEmail : ''}`);
+      
+      // Préparer la description complète avec les données additionnelles si nécessaire
+      const fullDescription = additionalData 
+        ? `${description} | ${JSON.stringify(additionalData)}`
+        : description;
+      
+      // Convertir la sévérité au format attendu par Prisma
+      const prismaStatus = severityToPrisma[severity] || 'info';
+      
+      // Enregistrer l'incident dans la base de données
+      await prisma.securityIncident.create({
+        data: {
+          type,
+          description: fullDescription,
+          ip_address: ipAddress,
+          status: prismaStatus as any,
+          user_id: userId ? (typeof userId === 'string' ? parseInt(userId) : userId) : null,
+          occurred_at: new Date()
+        }
+      });
+    } catch (error) {
+      console.error('Erreur lors de la journalisation de l\'incident de sécurité:', error);
+    }
   }
 
   /**
-   * Enregistre une tentative de connexion échouée
+   * Journalise spécifiquement une tentative de connexion échouée
    */
   static async logFailedLogin(
-    userEmail: string,
+    email: string,
     ipAddress: string,
-    reason: string = "Identifiants invalides"
-  ): Promise<any> {
-    return this.logIncident(
+    reason: string = 'Identifiants invalides',
+    userId?: string | number
+  ) {
+    const description = `Échec de connexion pour ${email}: ${reason}`;
+    await this.logIncident(
       'failed_login',
-      `Échec de connexion pour ${userEmail}: ${reason}`,
+      description,
       ipAddress,
       'info',
-      null,
-      userEmail
-    );
-  }
-
-  /**
-   * Enregistre un verrouillage de compte
-   */
-  static async logAccountLocked(
-    userId: string,
-    userEmail: string,
-    ipAddress: string,
-    attempts: number
-  ): Promise<any> {
-    return this.logIncident(
-      'account_locked',
-      `Compte verrouillé après ${attempts} tentatives de connexion échouées`,
-      ipAddress,
-      'locked',
       userId,
-      userEmail
+      email
     );
   }
 
   /**
-   * Enregistre un changement de mot de passe
+   * Journalise un changement de mot de passe
    */
   static async logPasswordChange(
-    userId: string,
+    userId: string | number,
     userEmail: string,
     ipAddress: string,
-    isReset: boolean = false
-  ): Promise<any> {
-    const action = isReset ? "Réinitialisation" : "Changement";
-    return this.logIncident(
-      isReset ? 'password_reset' : 'password_change',
-      `${action} de mot de passe effectué`,
-      ipAddress,
-      'resolved',
-      userId,
-      userEmail
-    );
-  }
-
-  /**
-   * Enregistre une tentative d'accès non autorisé
-   */
-  static async logUnauthorizedAccess(
-    ipAddress: string,
-    resource: string,
-    userId?: string,
-    userEmail?: string
-  ): Promise<any> {
-    return this.logIncident(
-      'unauthorized_access',
-      `Tentative d'accès non autorisé à ${resource}`,
-      ipAddress,
-      'blocked',
-      userId,
-      userEmail
-    );
-  }
-
-  /**
-   * Récupère les incidents récents (simulé)
-   */
-  static async getRecentIncidents(
-    limit: number = 10,
-    page: number = 1,
-    filter?: { type?: string; userId?: string; ipAddress?: string }
-  ): Promise<{ incidents: any[]; total: number }> {
-    // Dans Edge Runtime, cette méthode ne fait rien
-    // On pourrait appeler une API via fetch si nécessaire
-    console.log(`[SECURITY INCIDENT] getRecentIncidents called (Edge-compatible version)`);
+    adminAction: boolean = false
+  ) {
+    const description = adminAction
+      ? `Mot de passe réinitialisé par un administrateur pour ${userEmail}`
+      : `Changement de mot de passe pour ${userEmail}`;
     
-    // Retourner des données vides
-    return { incidents: [], total: 0 };
+    await this.logIncident(
+      'password_change',
+      description,
+      ipAddress,
+      'info',
+      userId,
+      userEmail
+    );
+  }
+
+  /**
+   * Récupère les incidents récents pour un utilisateur spécifique
+   */
+  static async getRecentIncidentsForUser(userId: string | number, limit: number = 10) {
+    try {
+      const userIdNumber = typeof userId === 'string' ? parseInt(userId) : userId;
+      
+      return await prisma.securityIncident.findMany({
+        where: { user_id: userIdNumber },
+        orderBy: { occurred_at: 'desc' },
+        take: limit
+      });
+    } catch (error) {
+      console.error('Erreur lors de la récupération des incidents:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Récupère les incidents récents pour tous les utilisateurs
+   */
+  static async getRecentIncidents(limit: number = 50, type?: SecurityIncidentType) {
+    try {
+      const where = type ? { type } : {};
+      
+      return await prisma.securityIncident.findMany({
+        where,
+        orderBy: { occurred_at: 'desc' },
+        take: limit
+      });
+    } catch (error) {
+      console.error('Erreur lors de la récupération des incidents:', error);
+      return [];
+    }
   }
 } 

@@ -1,0 +1,143 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    Int       @id @default(autoincrement())
+  name                  String
+  email                 String    @unique
+  password              String
+  role                  Role      @default(OPERATOR)
+  status                Status    @default(ACTIVE)
+  lastLogin             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  firstLogin            Boolean   @default(true)
+  loginAttempts         Int       @default(0)
+  lockedUntil           DateTime?
+  lastPasswordChange    DateTime?
+  resetPasswordToken    String?
+  resetPasswordExpires  DateTime?
+  twoFactorEnabled      Boolean   @default(false)
+  twoFactorSecret       String?
+  twoFactorRecoveryCode String?
+  twoFactorCreatedAt    DateTime?
+  twoFactorVerifiedAt   DateTime?
+
+  // Relations
+  profile           Profile?           @relation(fields: [profileId], references: [id])
+  profileId         Int?
+  sessions          Session[]
+  securityIncidents SecurityIncident[]
+}
+
+model Profile {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  permissions ProfilePermission[]
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  module      String
+  action      String
+  createdAt   DateTime @default(now())
+
+  // Relations
+  profiles ProfilePermission[]
+}
+
+model ProfilePermission {
+  id           Int      @id @default(autoincrement())
+  profileId    Int
+  permissionId Int
+  createdAt    DateTime @default(now())
+
+  // Relations
+  profile    Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, permissionId])
+}
+
+model Session {
+  id           String   @id
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SecurityIncident {
+  id        Int            @id @default(autoincrement())
+  type      IncidentType
+  timestamp DateTime       @default(now())
+  userId    Int?
+  userEmail String?
+  ipAddress String
+  details   String
+  status    IncidentStatus @default(INFO)
+  createdAt DateTime       @default(now())
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([timestamp])
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  OPERATOR
+  CONSULTANT
+}
+
+enum Status {
+  ACTIVE
+  INACTIVE
+}
+
+enum IncidentType {
+  FAILED_LOGIN
+  ACCOUNT_LOCKED
+  PASSWORD_CHANGE
+  UNAUTHORIZED_ACCESS
+  SESSION_EXPIRED
+  UNUSUAL_IP
+  PASSWORD_RESET
+  ADMIN_ACTION
+  SECURITY_SETTING_CHANGE
+  OTHER
+  SUCCESSFUL_LOGIN
+}
+
+enum IncidentStatus {
+  RESOLVED
+  BLOCKED
+  ALERT
+  LOCKED
+  INFO
+}

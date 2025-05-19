@@ -5,13 +5,19 @@ const nextConfig = {
   images: {
     domains: ['localhost', 'randomuser.me'],
   },
-  // Supprimer les redirections avec destinations incorrectes
+  // Redirections mises à jour
   async redirects() {
     return [
-      // Rediriger vers le dashboard après la connexion
+      // Rediriger de auth/login vers /login (standardisation)
+      {
+        source: '/auth/login',
+        destination: '/login',
+        permanent: true,
+      },
+      // Rediriger de auth/signin vers /login
       {
         source: '/auth/signin',
-        destination: '/auth/login',
+        destination: '/login',
         permanent: true,
       },
       // Rediriger l'ancienne route de changement de mot de passe

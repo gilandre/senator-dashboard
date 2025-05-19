@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 
-export interface ISecuritySettings extends mongoose.Document {
+/**
+ * Interface pour les paramètres de sécurité
+ */
+export interface ISecuritySettings {
   passwordPolicy: {
     minLength: number;
     requireUppercase: boolean;
@@ -35,8 +38,9 @@ export interface ISecuritySettings extends mongoose.Document {
     enabled: boolean;
     requiredForRoles: string[]; // 'all' ou liste de rôles
   };
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
+  updatedBy?: number | null;
 }
 
 const securitySettingsSchema = new mongoose.Schema({
@@ -75,7 +79,8 @@ const securitySettingsSchema = new mongoose.Schema({
     requiredForRoles: [{ type: String }]
   },
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  updatedBy: { type: Number, default: null }
 });
 
 // Mettre à jour la date de dernière modification

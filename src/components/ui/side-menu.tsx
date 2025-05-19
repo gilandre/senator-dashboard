@@ -150,11 +150,6 @@ export default function SideMenu() {
           href: "/visitors",
           icon: UserRound,
         },
-        {
-          name: "Départements",
-          href: "/departments",
-          icon: Building,
-        },
       ],
     },
     {

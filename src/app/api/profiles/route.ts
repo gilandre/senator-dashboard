@@ -1,169 +1,362 @@
 import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import Profile, { IProfile } from '@/models/Profile';
-import User from '@/models/User';
-import { connectToDatabase } from '@/lib/database';
 import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { Session } from 'next-auth';
+import { z } from 'zod';
+import { authOptions, isAdmin } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { SecurityIncidentService } from '@/lib/security/incidentService';
 
-// Interface étendue pour inclure les propriétés utilisateur personnalisées
-interface CustomSession extends Session {
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    role: string;
-  };
-}
-
-// Définir les schémas Mongoose (normalement ces modèles seraient importés)
-const ProfileSchema = new mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: { type: String, required: true },
-  accessLevel: { type: String, default: 'Standard' },
-  status: { type: String, default: 'Actif', enum: ['Actif', 'Inactif'] },
-  permissions: [{ 
-    type: mongoose.Schema.Types.ObjectId, 
-    ref: 'Permission',
-  }],
-  isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now },
-  createdBy: { type: String },
-  updatedAt: { type: Date, default: Date.now }
+// Schéma de validation pour la création d'un profil
+const createProfileSchema = z.object({
+  name: z.string().min(3, "Le nom doit contenir au moins 3 caractères"),
+  description: z.string().min(3, "La description doit contenir au moins 3 caractères"),
+  permissions: z.array(z.string()).optional(),
 });
 
-// Récupérer un modèle existant, ou en créer un nouveau
-const ProfileModel = mongoose.models.Profile || mongoose.model('Profile', ProfileSchema);
+// Schéma de validation pour la mise à jour d'un profil
+const updateProfileSchema = z.object({
+  name: z.string().min(3, "Le nom doit contenir au moins 3 caractères").optional(),
+  description: z.string().min(3, "La description doit contenir au moins 3 caractères").optional(),
+  permissions: z.array(z.string()).optional(),
+});
 
-// GET /api/profiles - Récupérer tous les profils
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/profiles
+ * Récupérer la liste des profils
+ */
+export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions) as CustomSession;
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
+    
     if (!session) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
 
-    const url = new URL(request.url);
-    const searchParam = url.searchParams.get('search') || '';
-    const statusParam = url.searchParams.get('status') || '';
-
-    await connectToDatabase();
-
-    // Construire la requête de recherche
-    let query: any = {};
+    // Extraire les paramètres de requête pour la pagination et les filtres
+    const url = new URL(req.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const limit = parseInt(url.searchParams.get('limit') || '10');
+    const search = url.searchParams.get('search') || '';
     
-    // Ajouter la recherche par nom si spécifiée
-    if (searchParam) {
-      query.name = { $regex: searchParam, $options: 'i' };
+    // Calculer le décalage pour la pagination
+    const skip = (page - 1) * limit;
+    
+    // Construire la requête avec les filtres
+    const where: any = {};
+    if (search) {
+      where.OR = [
+        { name: { contains: search } },
+        { description: { contains: search } }
+      ];
     }
     
-    // Filtrer par statut si spécifié
-    if (statusParam === 'Actif') {
-      query.isActive = true;
-    } else if (statusParam === 'Inactif') {
-      query.isActive = false;
-    }
-
-    // Récupérer les profils
-    const profiles = await ProfileModel.find(query)
-      .select('name description accessLevel isActive status createdAt updatedAt permissions')
-      .sort({ name: 1 });
-
-    // Compter les utilisateurs par profil
-    const usersCountPromises = profiles.map(async (profile) => {
-      const count = await User.countDocuments({ profileId: profile._id });
-      return { profileId: profile._id.toString(), count };
+    // Récupérer les profils avec pagination
+    const profiles = await prisma.profile.findMany({
+      where,
+      include: {
+        _count: {
+          select: {
+            user_profiles: true // Compter le nombre d'utilisateurs par profil
+          }
+        },
+        profile_permissions: {
+          include: {
+            permission: true
+          }
+        }
+      },
+      skip,
+      take: limit,
+      orderBy: { name: 'asc' }
     });
     
-    const usersCountResults = await Promise.all(usersCountPromises);
-    const usersCountMap = usersCountResults.reduce((map, item) => {
-      map[item.profileId] = item.count;
-      return map;
-    }, {} as Record<string, number>);
-
-    // Transform MongoDB _id to id for frontend compatibility
-    const transformedProfiles = profiles.map(profile => {
-      const profileObj = profile.toObject();
-      return {
-        id: profileObj._id.toString(),
-        name: profileObj.name,
-        description: profileObj.description,
-        accessLevel: profileObj.accessLevel || 'Standard',
-        status: profileObj.status || 'Actif',
-        isActive: profileObj.isActive !== undefined ? profileObj.isActive : true,
-        createdAt: profileObj.createdAt,
-        updatedAt: profileObj.updatedAt,
-        permissionsCount: profileObj.permissions ? profileObj.permissions.length : 0,
-        usersCount: usersCountMap[profileObj._id.toString()] || 0
-      };
+    // Compter le nombre total de profils pour la pagination
+    const total = await prisma.profile.count({ where });
+    
+    // Transformer les données pour le retour
+    const formattedProfiles = profiles.map(profile => ({
+      id: profile.id,
+      name: profile.name,
+      description: profile.description,
+      userCount: profile._count.user_profiles,
+      permissions: profile.profile_permissions.map(pp => ({
+        id: pp.permission.id,
+        name: pp.permission.name,
+        code: pp.permission.code,
+      }))
+    }));
+    
+    // Journaliser l'accès à la liste des profils pour les admins
+    if (isAdmin(session)) {
+      await SecurityIncidentService.logIncident(
+        'admin_action',
+        `Liste des profils consultée`,
+        req.headers.get('x-forwarded-for') || 'unknown',
+        'info',
+        session.user?.id ? String(session.user.id) : undefined,
+        session.user?.email || ''
+      );
+    }
+    
+    return NextResponse.json({
+      profiles: formattedProfiles,
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
     });
-
-    return NextResponse.json({ profiles: transformedProfiles });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur lors de la récupération des profils:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la récupération des profils' },
+      { error: "Erreur serveur lors de la récupération des profils" },
       { status: 500 }
     );
   }
 }
 
-// POST /api/profiles - Créer un nouveau profil
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/profiles
+ * Créer un nouveau profil
+ */
+export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions) as CustomSession;
+    // Vérifier l'authentification et les permissions
+    const session = await getServerSession(authOptions);
+    
     if (!session) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
-
-    // Vérifier si l'utilisateur est admin
-    if (session.user.role !== 'admin') {
-      return NextResponse.json(
-        { error: 'Vous n\'êtes pas autorisé à créer des profils' },
-        { status: 403 }
-      );
+    
+    // Seuls les admins peuvent créer des profils
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
-
-    const body = await request.json();
-    const { name, description, accessLevel, status, isActive } = body;
-
-    // Valider les champs requis
-    if (!name || !description) {
+    
+    // Extraire et valider les données
+    const body = await req.json();
+    const validationResult = createProfileSchema.safeParse(body);
+    
+    if (!validationResult.success) {
       return NextResponse.json(
-        { error: 'Le nom et la description sont requis' },
+        { error: "Données invalides", details: validationResult.error.format() },
         { status: 400 }
       );
     }
-
-    await connectToDatabase();
-
-    // Vérifier si un profil avec le même nom existe déjà
-    const existingProfile = await ProfileModel.findOne({ name });
+    
+    const { name, description, permissions } = validationResult.data;
+    
+    // Vérifier si le nom est déjà utilisé
+    const existingProfile = await prisma.profile.findFirst({
+      where: { name }
+    });
+    
     if (existingProfile) {
       return NextResponse.json(
-        { error: 'Un profil avec ce nom existe déjà' },
+        { error: "Un profil avec ce nom existe déjà" },
         { status: 400 }
       );
     }
-
-    // Créer le nouveau profil
-    const newProfile = new ProfileModel({
-      name,
-      description,
-      accessLevel: accessLevel || 'Standard',
-      status: status || 'Actif',
-      isActive: isActive !== undefined ? isActive : true,
-      createdBy: session.user.id,
+    
+    // Créer le profil
+    const profile = await prisma.profile.create({
+      data: {
+        name,
+        description,
+        created_at: new Date(),
+        updated_at: new Date()
+      }
     });
-
-    await newProfile.save();
-
-    return NextResponse.json(newProfile, { status: 201 });
-  } catch (error) {
+    
+    // Associer les permissions si fournies
+    if (permissions && permissions.length > 0) {
+      const permissionEntities = await prisma.permission.findMany({
+        where: {
+          code: {
+            in: permissions
+          }
+        }
+      });
+      
+      if (permissionEntities.length > 0) {
+        await Promise.all(permissionEntities.map(perm => 
+          prisma.profilePermission.create({
+            data: {
+              profile_id: profile.id,
+              permission_id: perm.id
+            }
+          })
+        ));
+      }
+    }
+    
+    // Journaliser la création du profil
+    await SecurityIncidentService.logIncident(
+      'admin_action',
+      `Profil créé: ${name}`,
+      req.headers.get('x-forwarded-for') || 'unknown',
+      'info',
+      session.user?.id ? String(session.user.id) : undefined,
+      session.user?.email || ''
+    );
+    
+    return NextResponse.json({
+      id: profile.id,
+      name: profile.name,
+      description: profile.description,
+      created_at: profile.created_at
+    }, { status: 201 });
+  } catch (error: any) {
     console.error('Erreur lors de la création du profil:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la création du profil' },
+      { error: "Erreur serveur lors de la création du profil" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/profiles
+ * Mise à jour massive de profils
+ */
+export async function PATCH(req: NextRequest) {
+  try {
+    // Vérifier l'authentification et les permissions
+    const session = await getServerSession(authOptions);
+    
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+    
+    // Seuls les admins peuvent mettre à jour plusieurs profils
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
+    }
+    
+    // Extraire les données
+    const body = await req.json();
+    const { profileIds, action, data } = body;
+    
+    if (!profileIds || !Array.isArray(profileIds) || profileIds.length === 0) {
+      return NextResponse.json(
+        { error: "Liste d'IDs de profils requise" },
+        { status: 400 }
+      );
+    }
+    
+    if (!action) {
+      return NextResponse.json(
+        { error: "Action requise" },
+        { status: 400 }
+      );
+    }
+    
+    let result;
+    
+    switch (action) {
+      case 'addPermission':
+        if (!data?.permissionId) {
+          return NextResponse.json(
+            { error: "ID de permission requis" },
+            { status: 400 }
+          );
+        }
+        
+        // Pour chaque profil, ajouter l'association à la permission si elle n'existe pas déjà
+        const createPromises = profileIds.map(async (profileId) => {
+          // Vérifier si l'association existe déjà
+          const existing = await prisma.profilePermission.findUnique({
+            where: {
+              profile_id_permission_id: {
+                profile_id: Number(profileId),
+                permission_id: Number(data.permissionId)
+              }
+            }
+          });
+          
+          // Si elle n'existe pas, la créer
+          if (!existing) {
+            return prisma.profilePermission.create({
+              data: {
+                profile_id: Number(profileId),
+                permission_id: Number(data.permissionId)
+              }
+            });
+          }
+          
+          return null;
+        });
+        
+        await Promise.all(createPromises);
+        
+        result = { count: profileIds.length };
+        break;
+        
+      case 'removePermission':
+        if (!data?.permissionId) {
+          return NextResponse.json(
+            { error: "ID de permission requis" },
+            { status: 400 }
+          );
+        }
+        
+        // Supprimer les associations profil-permission spécifiées
+        result = await prisma.profilePermission.deleteMany({
+          where: {
+            profile_id: { in: profileIds.map(Number) },
+            permission_id: Number(data.permissionId)
+          }
+        });
+        break;
+        
+      case 'delete':
+        // Supprimer d'abord les associations avec les permissions
+        await prisma.profilePermission.deleteMany({
+          where: {
+            profile_id: { in: profileIds.map(Number) }
+          }
+        });
+        
+        // Supprimer ensuite les associations avec les utilisateurs
+        await prisma.userProfile.deleteMany({
+          where: {
+            profile_id: { in: profileIds.map(Number) }
+          }
+        });
+        
+        // Enfin, supprimer les profils
+        result = await prisma.profile.deleteMany({
+          where: { id: { in: profileIds.map(Number) } }
+        });
+        break;
+        
+      default:
+        return NextResponse.json(
+          { error: "Action non reconnue" },
+          { status: 400 }
+        );
+    }
+    
+    // Journaliser l'action collective
+    await SecurityIncidentService.logIncident(
+      'admin_action',
+      `Action collective sur profils: ${action} (${profileIds.length} profils)`,
+      req.headers.get('x-forwarded-for') || 'unknown',
+      'info',
+      session.user?.id ? String(session.user.id) : undefined,
+      session.user?.email || ''
+    );
+    
+    return NextResponse.json({
+      success: true,
+      action,
+      affected: result?.count || 0
+    });
+  } catch (error: any) {
+    console.error('Erreur lors de la mise à jour collective des profils:', error);
+    return NextResponse.json(
+      { error: "Erreur serveur lors de la mise à jour collective des profils" },
       { status: 500 }
     );
   }

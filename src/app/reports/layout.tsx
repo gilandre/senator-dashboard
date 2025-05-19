@@ -1,8 +1,13 @@
-'use client';
-
+import React from 'react';
 import TopMenu from '@/components/ui/top-menu';
 import SideMenu from '@/components/ui/side-menu';
 import { Toaster } from '@/components/ui/toaster';
+import { Metadata } from 'next';
+
+export const metadata: Metadata = {
+  title: "Rapports | SenatorFX",
+  description: "Rapports d'accès et statistiques",
+};
 
 export default function ReportsLayout({
   children,

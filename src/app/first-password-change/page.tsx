@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label';
 import { signOut, signIn } from 'next-auth/react';
 import { useAuth } from '@/hooks/useAuth';
 import axios from 'axios';
+import config, { buildUrl } from '@/lib/config';
 
 interface PasswordFormData {
   currentPassword: string;
@@ -35,6 +36,7 @@ export default function FirstPasswordChangePage() {
   
   const { register, handleSubmit, watch, formState: { errors } } = useForm<PasswordFormData>();
   const newPassword = watch('newPassword', '');
+  const confirmPassword = watch('confirmPassword', '');
   
   // Évaluer la force du mot de passe
   const getPasswordStrength = (password: string): 'weak' | 'medium' | 'strong' => {
@@ -64,12 +66,11 @@ export default function FirstPasswordChangePage() {
     router.push('/auth/login');
   };
   
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmitForm = async (data: PasswordFormData) => {
     setIsLoading(true);
     setError(null);
 
-    if (newPassword !== confirmPassword) {
+    if (data.newPassword !== data.confirmPassword) {
       setError("Les mots de passe ne correspondent pas.");
       setIsLoading(false);
       return;
@@ -79,7 +80,8 @@ export default function FirstPasswordChangePage() {
       // Envoyer la demande de changement de mot de passe
       const response = await axios.post('/api/users/change-password', {
         currentPassword: "pass-ignored-for-first-login", // Ce champ est ignoré lors de la première connexion
-        newPassword,
+        newPassword: data.newPassword,
+        confirmPassword: data.confirmPassword,
         isFirstLogin: true
       });
 
@@ -91,7 +93,7 @@ export default function FirstPasswordChangePage() {
         await signIn("credentials", {
           redirect: true,
           email: session?.user?.email,
-          password: newPassword,
+          password: data.newPassword,
           callbackUrl: "/dashboard"
         });
       }
@@ -139,7 +141,7 @@ export default function FirstPasswordChangePage() {
             </Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-6">
             {error && (
               <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md text-red-800 dark:text-red-300 mb-4 flex items-start">
                 <AlertTriangle className="h-5 w-5 mr-2 mt-0.5 flex-shrink-0" />

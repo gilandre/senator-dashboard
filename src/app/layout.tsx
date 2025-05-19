@@ -1,16 +1,28 @@
-import { Inter } from 'next/font/google'
-import './globals.css'
-import { Toaster } from '@/components/ui/toaster'
-import Providers from './providers'
-import { Metadata } from 'next'
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import Providers from './providers';
+import { APP_CONFIG } from '@/config/app';
+import { Toaster } from '@/components/ui/toaster';
 
-const inter = Inter({ subsets: ['latin'] })
+const inter = Inter({ subsets: ['latin'] });
+
+export const metadata: Metadata = {
+  title: APP_CONFIG.name,
+  description: 'Application de gestion des présences et accès',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'),
+  openGraph: {
+    title: APP_CONFIG.name,
+    description: 'Application de gestion des présences et accès',
+    type: 'website',
+  },
+};
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="fr" suppressHydrationWarning>
       <head>
@@ -25,10 +37,5 @@ export default function RootLayout({
         </Providers>
       </body>
     </html>
-  )
-}
-
-export const metadata: Metadata = {
-  title: 'EMERAUDE DASHI',
-  description: 'Application de gestion de contrôle d\'accès',
-}; 
+  );
+} 

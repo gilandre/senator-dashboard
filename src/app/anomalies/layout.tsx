@@ -1,24 +1,15 @@
-'use client';
+import { Metadata } from 'next';
+import ClientLayout from '@/components/layout/ClientLayout';
 
-import TopMenu from '@/components/ui/top-menu';
-import SideMenu from '@/components/ui/side-menu';
-import { Toaster } from '@/components/ui/toaster';
+export const metadata: Metadata = {
+  title: "Anomalies | EMERAUDE DASHI",
+  description: "Détection et analyse des anomalies d'accès",
+};
 
 export default function AnomaliesLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <div className="flex flex-col h-screen">
-      <TopMenu />
-      <div className="flex flex-1 overflow-hidden">
-        <SideMenu />
-        <main className="flex-1 overflow-y-auto p-4 bg-gray-50 dark:bg-gray-900">
-          {children}
-        </main>
-      </div>
-      <Toaster />
-    </div>
-  );
+  return <ClientLayout>{children}</ClientLayout>;
 } 

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { APP_CONFIG } from '@/config/app';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -54,7 +55,7 @@ export default function LoginPage() {
             <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-md shadow-lg"></div>
             <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">Q</div>
           </div>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">QUANTINNUM EA</span>
+          <span className="text-xl font-bold text-gray-900 dark:text-white">{APP_CONFIG.name}</span>
         </div>
       </header>
 
@@ -175,7 +176,7 @@ export default function LoginPage() {
 
       {/* Footer */}
       <footer className="py-6 px-4 text-center text-sm text-gray-600 dark:text-gray-400">
-        <p>&copy; {new Date().getFullYear()} QUANTINNUM EA. Tous droits réservés.</p>
+        <p>&copy; {new Date().getFullYear()} {APP_CONFIG.name}. Tous droits réservés.</p>
       </footer>
     </div>
   );

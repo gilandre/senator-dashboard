@@ -1,0 +1,8 @@
+/*
+  Warnings:
+
+  - You are about to alter the column `event_type` on the `access_logs` table. The data in that column could be lost. The data in that column will be cast from `VarChar(255)` to `Enum(EnumId(4))`.
+
+*/
+-- AlterTable
+ALTER TABLE `access_logs` MODIFY `event_type` ENUM('unknown', 'entry', 'exit', 'access_denied', 'alarm', 'system', 'user_accepted', 'user_rejected', 'door_forced', 'door_held', 'door_locked', 'door_unlocked', 'door_opened', 'door_closed', 'door_timeout', 'door_denied', 'door_authorized', 'door_unauthorized', 'door_forced_open', 'door_forced_closed', 'door_held_open', 'door_held_closed', 'door_locked_manually', 'door_unlocked_manually', 'door_locked_automatically', 'door_unlocked_automatically', 'door_locked_by_schedule', 'door_unlocked_by_schedule', 'door_locked_by_alarm', 'door_unlocked_by_alarm', 'door_locked_by_emergency', 'door_unlocked_by_emergency', 'door_locked_by_fire', 'door_unlocked_by_fire', 'door_locked_by_security', 'door_unlocked_by_security', 'door_locked_by_system', 'door_unlocked_by_system', 'door_locked_by_user', 'door_unlocked_by_user', 'door_locked_by_admin', 'door_unlocked_by_admin', 'door_locked_by_operator', 'door_unlocked_by_operator', 'door_locked_by_guard', 'door_unlocked_by_guard', 'door_locked_by_visitor', 'door_unlocked_by_visitor', 'door_locked_by_employee', 'door_unlocked_by_employee', 'door_locked_by_contractor', 'door_unlocked_by_contractor', 'door_locked_by_vendor', 'door_unlocked_by_vendor', 'door_locked_by_guest', 'door_unlocked_by_guest', 'door_locked_by_other', 'door_unlocked_by_other') NULL DEFAULT 'unknown';

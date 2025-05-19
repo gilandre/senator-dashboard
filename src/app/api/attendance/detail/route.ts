@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import AccessLog from '@/models/AccessLog';
-import Holiday from '@/models/Holiday';
-import { connectToDatabase } from '@/lib/mongodb';
+import prisma from '@/lib/prisma';
+import { access_logs as AccessLog, holidays as Holiday } from '@prisma/client';
 
 // Interface pour définir le type de l'objet Holiday
 interface IHoliday {
@@ -30,52 +28,94 @@ export async function GET(request: Request) {
 
     // Convertir la date en objets Date
     const requestDate = new Date(date);
+    if (isNaN(requestDate.getTime())) {
+      return NextResponse.json(
+        { error: 'Format de date invalide' },
+        { status: 400 }
+      );
+    }
+
     // Créer des objets Date pour le début et la fin de la journée
     const startOfDay = new Date(requestDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(requestDate);
     endOfDay.setHours(23, 59, 59, 999);
     
-    // Connecter à la base de données
-    await connectToDatabase();
-    
     // Vérifier si c'est un jour férié
-    const holiday = await Holiday.findOne({
-      date: {
-        $gte: startOfDay,
-        $lte: endOfDay
+    const holiday = await prisma.holidays.findFirst({
+      where: {
+        date: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
       }
-    }).lean() as IHoliday | null;
+    }).catch(error => {
+      console.error('Erreur lors de la récupération du jour férié:', error);
+      return null;
+    });
     
     // Vérifier si c'est un week-end
-    const isWeekend = requestDate.getDay() === 0 || requestDate.getDay() === 6; // 0 = dimanche, 6 = samedi
+    const isWeekend = requestDate.getDay() === 0 || requestDate.getDay() === 6;
+    
+    // Vérifier si l'employé existe
+    const employee = await prisma.employees.findUnique({
+      where: { badge_number: badgeNumber }
+    }).catch(error => {
+      console.error('Erreur lors de la vérification de l\'employé:', error);
+      return null;
+    });
+
+    if (!employee) {
+      return NextResponse.json(
+        { error: 'Employé non trouvé' },
+        { status: 404 }
+      );
+    }
     
     // Récupérer tous les événements d'accès pour l'employé à la date spécifiée
-    const accessLogs = await AccessLog.find({
-      badgeNumber: badgeNumber,
-      eventDate: {
-        $gte: startOfDay,
-        $lte: endOfDay
+    const accessLogs = await prisma.access_logs.findMany({
+      where: {
+        badge_number: badgeNumber,
+        event_date: {
+          gte: startOfDay,
+          lte: endOfDay
+        }
+      },
+      orderBy: {
+        event_time: 'asc'
       }
-    }).sort({ eventTime: 1 }).lean();
+    }).catch(error => {
+      console.error('Erreur lors de la récupération des logs d\'accès:', error);
+      return [];
+    });
     
-    // Si aucun log n'est trouvé, renvoyer une réponse vide
+    // Si aucun log n'est trouvé, renvoyer une réponse avec les informations de base
     if (!accessLogs || accessLogs.length === 0) {
-      return NextResponse.json({ error: 'Aucune donnée trouvée pour cet employé à cette date' }, { status: 404 });
+      return NextResponse.json({
+        badgeNumber: employee.badge_number,
+        firstName: employee.first_name,
+        lastName: employee.last_name,
+        date: date,
+        events: [],
+        isHoliday: !!holiday,
+        isWeekend: isWeekend,
+        holidayName: holiday ? holiday.name : undefined,
+        totalHours: 0
+      });
     }
     
     // Extraire les informations de l'employé du premier log
     const employeeInfo = {
-      badgeNumber: accessLogs[0].badgeNumber,
-      firstName: accessLogs[0].firstName || '',
-      lastName: accessLogs[0].lastName || '',
+      badgeNumber: accessLogs[0].badge_number,
+      firstName: accessLogs[0].full_name ? accessLogs[0].full_name.split(' ')[0] : '',
+      lastName: accessLogs[0].full_name ? accessLogs[0].full_name.split(' ').slice(1).join(' ') : '',
     };
     
     // Formater les événements
     const events = accessLogs.map(log => ({
-      time: log.eventTime,
-      type: log.eventType,
-      reader: log.reader
+      time: log.event_time.toTimeString().split(' ')[0].substring(0, 8),
+      type: log.event_type,
+      reader: log.reader || 'Inconnu'
     }));
     
     // Déterminer l'heure d'arrivée (premier événement de la journée)
@@ -90,13 +130,23 @@ export async function GET(request: Request) {
       const [arrivalHour, arrivalMinute] = arrivalTime.split(':').map(Number);
       const [departureHour, departureMinute] = departureTime.split(':').map(Number);
       
-      // Calculer la différence en heures
-      totalHours = (departureHour - arrivalHour) + (departureMinute - arrivalMinute) / 60;
+      // Calculer la différence en minutes puis en heures pour plus de précision
+      const arrivalMinutes = arrivalHour * 60 + arrivalMinute;
+      const departureMinutes = departureHour * 60 + departureMinute;
+      let durationMinutes = departureMinutes - arrivalMinutes;
       
       // S'assurer que la valeur est positive (cas où l'employé part le lendemain)
-      if (totalHours < 0) {
-        totalHours += 24;
+      if (durationMinutes < 0) {
+        durationMinutes += 24 * 60; // Ajouter 24h en minutes
       }
+      
+      // Déduire 1h pour la pause déjeuner si la durée est supérieure à 5h
+      if (durationMinutes > 5 * 60) {
+        durationMinutes -= 60; // Déduire 60 minutes pour la pause
+      }
+      
+      // Convertir en heures avec 2 décimales
+      totalHours = Math.round((durationMinutes / 60) * 100) / 100;
     }
     
     // Construire la réponse
@@ -105,7 +155,7 @@ export async function GET(request: Request) {
       date: date,
       events: events,
       isHoliday: !!holiday,
-      isContinuousDay: !!holiday && holiday?.type === 'continuous',
+      isContinuousDay: false, // Cette information n'est plus stockée dans le même format
       isWeekend: isWeekend,
       holidayName: holiday ? holiday.name : undefined,
       totalHours: totalHours
@@ -114,14 +164,6 @@ export async function GET(request: Request) {
     return NextResponse.json(response);
   } catch (error) {
     console.error('Erreur lors de la récupération des détails de présence:', error);
-    
-    // Si la connexion à la base de données a échoué
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
     
     return NextResponse.json(
       { error: 'Une erreur s\'est produite lors de la récupération des détails' },

@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Mail, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { APP_CONFIG } from '@/config/app';
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -48,7 +51,7 @@ export default function ForgotPasswordPage() {
             <div className="absolute inset-0 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-md shadow-lg"></div>
             <div className="absolute inset-1 bg-white dark:bg-gray-900 rounded-sm flex items-center justify-center text-emerald-600 dark:text-emerald-400 font-bold text-lg">S</div>
           </div>
-          <span className="text-xl font-bold text-gray-900 dark:text-white">SENATOR INVESTECH</span>
+          <span className="text-xl font-bold text-gray-900 dark:text-white">{APP_CONFIG.name}</span>
         </div>
       </header>
 
@@ -145,7 +148,7 @@ export default function ForgotPasswordPage() {
 
       {/* Footer */}
       <footer className="py-6 px-4 text-center text-sm text-gray-600 dark:text-gray-400">
-        <p>&copy; {new Date().getFullYear()} QUANTINNUM EA. Tous droits réservés.</p>
+        <p>&copy; {new Date().getFullYear()} {APP_CONFIG.name}. Tous droits réservés.</p>
       </footer>
     </div>
   );

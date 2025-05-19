@@ -171,40 +171,30 @@ export default function CsvImportPage() {
     if (!file) return;
 
     try {
-      setErrorMessage(null);
       setIsUploading(true);
-      setProgress(0);
+      setProgress(25);
 
-      // Télécharger le fichier
+      // Créer un FormData pour l'upload
       const formData = new FormData();
       formData.append('file', file);
 
-      const uploadResponse = await axios.post('/api/import/csv/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            setProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total / 2));
-          }
+      // Envoyer le fichier directement à l'API de traitement
+      const response = await axios.post('/api/import/csv/process', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'Accept': 'application/json',
         },
+        transformRequest: [(data) => data], // Empêche Axios de transformer le FormData
       });
 
       setIsUploading(false);
-      setIsProcessing(true);
-      setProgress(50);
-
-      // Traiter le fichier téléchargé
-      const { filePath } = uploadResponse.data;
-
-      const processResponse = await axios.post('/api/import/csv/process', { filePath });
-      
-      setIsProcessing(false);
       setProgress(100);
 
       // Succès
       setImportResult({
         success: true,
         message: 'Importation réussie',
-        stats: processResponse.data.stats,
+        stats: response.data.stats,
       });
 
     } catch (error) {
@@ -215,18 +205,18 @@ export default function CsvImportPage() {
       let errorMsg = "Une erreur est survenue lors de l'importation";
       
       // Analyser l'erreur pour fournir un message plus précis
-      if (axios.isAxiosError(error) && error.response) {
-        const errorData = error.response.data;
+      if (axios.isAxiosError(error)) {
+        console.error('Axios error details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          headers: error.response?.headers,
+        });
         
-        if (errorData.message) {
-          // Vérifier si c'est une erreur de format CSV
-          if (errorData.message.includes('Invalid Record Length')) {
-            errorMsg = "Erreur de format CSV: Le nombre de colonnes est incohérent. Certaines lignes ont un nombre différent de colonnes par rapport à l'en-tête.";
-          } else if (errorData.message.includes('CSV')) {
-            errorMsg = `Erreur de format CSV: ${errorData.message}`;
-          } else {
-            errorMsg = errorData.message || errorData.error || errorMsg;
-          }
+        if (error.response?.data?.error) {
+          errorMsg = error.response.data.error;
+        } else if (error.response?.data?.message) {
+          errorMsg = error.response.data.message;
         }
       } else if (error instanceof Error) {
         errorMsg = error.message;
@@ -416,72 +406,6 @@ export default function CsvImportPage() {
                     </p>
                   </div>
                 </div>
-
-                {importResult && (
-                  <div className="mt-6">
-                    <Alert variant={importResult.success ? "default" : "destructive"}>
-                      <AlertTitle>{importResult.success ? "Import réussi" : "Erreur d'import"}</AlertTitle>
-                      <AlertDescription>
-                        {importResult.message}
-                        
-                        {importResult.success && importResult.stats && (
-                          <div className="mt-4 space-y-2 text-sm">
-                            <h4 className="font-semibold">Statistiques d'importation :</h4>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <p>Total enregistrements : <span className="font-medium">{importResult.stats.totalRecords}</span></p>
-                                <p>Importés avec succès : <span className="font-medium">{importResult.stats.successfullyProcessed}</span></p>
-                                <p>Doublons ignorés : <span className="font-medium">{importResult.stats.duplicates}</span></p>
-                                <p>Enregistrements ignorés : <span className="font-medium">{importResult.stats.skippedRecords}</span></p>
-                                <p>Erreurs : <span className="font-medium">{importResult.stats.errorRecords}</span></p>
-                              </div>
-                              <div>
-                                <p>Employés : <span className="font-medium">{importResult.stats.employees}</span></p>
-                                <p>Visiteurs : <span className="font-medium">{importResult.stats.visitors}</span></p>
-                                <p>Entrées : <span className="font-medium">{importResult.stats.entriesCount}</span></p>
-                                <p>Sorties : <span className="font-medium">{importResult.stats.exitsCount}</span></p>
-                              </div>
-                            </div>
-                            
-                            {importResult.stats.warnings && importResult.stats.warnings.length > 0 && (
-                              <div className="mt-4">
-                                <h4 className="font-semibold">Avertissements :</h4>
-                                <ul className="list-disc pl-5 mt-2 text-xs space-y-1">
-                                  {importResult.stats.warnings.map((warning, index) => (
-                                    <li key={index}>{warning}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {!importResult.success && (
-                          <div className="mt-4 text-sm">
-                            <h4 className="font-semibold mt-4">Conseils de dépannage :</h4>
-                            <ul className="list-disc pl-5 mt-2 space-y-1">
-                              <li>Vérifiez que toutes les lignes ont le même nombre de colonnes que l'en-tête</li>
-                              <li>Assurez-vous que les colonnes nécessaires (numéro de badge, date, heure) sont présentes</li>
-                              <li>Si votre CSV utilise des séparateurs différents (point-virgule vs virgule), vérifiez la configuration</li>
-                              <li>Certains champs texte contiennent peut-être des virgules, essayez d'utiliser un autre séparateur</li>
-                              <li>Si votre fichier contient des caractères spéciaux, assurez-vous qu'il est encodé en UTF-8</li>
-                            </ul>
-                            
-                            <h4 className="font-semibold mt-4">Structure de fichier attendue :</h4>
-                            <p className="mt-1">Votre fichier CSV doit contenir au moins les colonnes suivantes :</p>
-                            <ul className="list-disc pl-5 mt-1">
-                              <li><span className="font-medium">Numéro de badge</span> (ou Badge, badgeNumber)</li>
-                              <li><span className="font-medium">Date</span> (ou eventDate, Date évènements)</li>
-                              <li><span className="font-medium">Heure</span> (ou eventTime, Heure évènements, time)</li>
-                            </ul>
-                            
-                            <p className="mt-2">Les autres champs comme le nom, prénom, lecteur, etc. sont optionnels mais recommandés.</p>
-                          </div>
-                        )}
-                      </AlertDescription>
-                    </Alert>
-                  </div>
-                )}
               </div>
             )}
           </CardContent>

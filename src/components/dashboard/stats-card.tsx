@@ -1,42 +1,55 @@
-import React from 'react';
+import React, { ReactNode } from 'react';
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle 
+} from "@/components/ui/card";
 
 interface StatsCardProps {
   title: string;
-  value: string | number;
-  icon?: React.ReactNode;
-  description?: string;
+  value: number;
+  icon: ReactNode;
+  description: string;
   trend?: {
     value: number;
     label: string;
-    positive?: boolean;
+    direction: 'up' | 'down';
   };
 }
 
 export default function StatsCard({ title, value, icon, description, trend }: StatsCardProps) {
+  // Formater le nombre avec des séparateurs de milliers
+  const formattedValue = value.toLocaleString();
+  
   return (
-    <div className="bg-white dark:bg-gray-950 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800 p-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-          <h3 className="text-2xl font-bold mt-1">{value}</h3>
-          {description && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{description}</p>
-          )}
-          {trend && (
-            <div className="flex items-center mt-2">
-              <span className={`text-sm font-medium ${trend.positive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                {trend.positive ? '+' : ''}{trend.value}%
-              </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400 ml-1">{trend.label}</span>
-            </div>
-          )}
-        </div>
-        {icon && (
-          <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
-            {icon}
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        {icon}
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">{formattedValue}</div>
+        <CardDescription className="text-xs text-muted-foreground">
+          {description}
+        </CardDescription>
+        
+        {trend && (
+          <div className="mt-2 flex items-center text-xs">
+            <span 
+              className={
+                trend.direction === 'up' 
+                  ? 'text-red-500' 
+                  : 'text-green-500'
+              }
+            >
+              {trend.direction === 'up' ? '↑' : '↓'} {trend.value}%
+            </span>
+            <span className="ml-1 text-muted-foreground">{trend.label}</span>
           </div>
         )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 } 

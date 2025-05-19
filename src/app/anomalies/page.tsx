@@ -1,126 +1,122 @@
-import React from 'react';
-import { AlertTriangle, ShieldAlert, Clock, Filter } from 'lucide-react';
-import ChartCard from '@/components/dashboard/chart-card';
-import StatsCard from '@/components/dashboard/stats-card';
-import { Button } from '@/components/ui/button';
-import { Metadata } from 'next';
+'use client';
 
-export const metadata: Metadata = {
-  title: "Anomalies | EMERAUDE DASHI",
-  description: "Détection et analyse des anomalies d'accès",
-};
+import { useState, useEffect } from 'react';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
+import { addDays } from 'date-fns';
+import { DateRange } from 'react-day-picker';
+import AnomalyStatistics from '@/components/dashboard/AnomalyStatistics';
+import AnomalyDailyChart from '@/components/dashboard/AnomalyDailyChart';
+import AnomalyTypeChart from '@/components/dashboard/AnomalyTypeChart';
+import RecentAnomalies from '@/components/dashboard/RecentAnomalies';
+import AnomalyExportMenu from '@/components/dashboard/AnomalyExportMenu';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AnomaliesPage() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Anomalies</h1>
-        <div className="flex space-x-2">
-          <Button variant="outline" size="sm">
-            <Filter className="h-4 w-4 mr-2" />
-            Filtrer
-          </Button>
-          <Button variant="outline" size="sm">
-            Exporter
-          </Button>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard 
-          title="Total anomalies" 
-          value={187} 
-          icon={<AlertTriangle className="h-6 w-6 text-red-500" />}
-          description="Sur les 30 derniers jours"
-          trend={{ value: 12, label: "vs mois précédent", positive: false }}
-        />
-        <StatsCard 
-          title="Accès refusés" 
-          value={142} 
-          icon={<ShieldAlert className="h-6 w-6 text-orange-500" />}
-          description="Badges non autorisés"
-        />
-        <StatsCard 
-          title="Tentatives hors heures" 
-          value={32} 
-          icon={<Clock className="h-6 w-6 text-yellow-500" />}
-          description="Accès en dehors des horaires"
-        />
-        <StatsCard 
-          title="Badges inconnus" 
-          value={13} 
-          icon={<AlertTriangle className="h-6 w-6 text-blue-500" />}
-          description="Badges non enregistrés"
-        />
-      </div>
-      
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartCard 
-          title="Anomalies par type" 
-          description="Répartition des types d&apos;anomalies"
-        >
-          <div className="h-80 flex items-center justify-center text-gray-500">
-            Graphique répartition des anomalies
-          </div>
-        </ChartCard>
+  const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: undefined,
+    to: undefined
+  });
+
+  // Fetch the max date from access logs when component mounts
+  useEffect(() => {
+    const fetchMaxDate = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/access-logs/max-date');
         
-        <ChartCard 
-          title="Tendance des anomalies" 
-          description="Évolution sur les 30 derniers jours"
-        >
-          <div className="h-80 flex items-center justify-center text-gray-500">
-            Graphique tendance des anomalies
+        if (!response.ok) {
+          throw new Error('Erreur lors de la récupération des dates');
+        }
+        
+        const data = await response.json();
+        
+        // Set date range: max date from logs to (max date - 14 days)
+        const maxDate = new Date(data.maxDate);
+        const startDate = addDays(maxDate, -14);
+        
+        setDateRange({
+          from: startDate,
+          to: maxDate
+        });
+      } catch (error) {
+        console.error('Erreur:', error);
+        // Fallback to default dates if API fails
+        const today = new Date();
+        setDateRange({
+          from: addDays(today, -7),
+          to: today
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchMaxDate();
+  }, []);
+
+  // Function to handle date range changes
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    if (range) {
+      setDateRange(range);
+    }
+  };
+
+  // Format dates for API calls
+  const formatDateForApi = (date: Date | undefined) => {
+    if (!date) return undefined;
+    return date.toISOString().split('T')[0];
+  };
+
+  const startDate = formatDateForApi(dateRange.from);
+  const endDate = formatDateForApi(dateRange.to);
+
+  if (loading) {
+    return (
+      <div className="container mx-auto p-4">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-semibold">Rapport d'anomalies</h1>
+            <Skeleton className="h-10 w-28" />
           </div>
-        </ChartCard>
-      </div>
-      
-      <ChartCard 
-        title="Détail des anomalies" 
-        description="Liste des dernières anomalies détectées"
-      >
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="border-b border-gray-200 dark:border-gray-800">
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Date</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Heure</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Badge</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Point d&apos;accès</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Type d&apos;anomalie</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Sévérité</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...Array(10)].map((_, index) => (
-                <tr key={index} className="border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-900">
-                  <td className="px-4 py-3 text-sm">12/06/2023</td>
-                  <td className="px-4 py-3 text-sm">08:4{index} AM</td>
-                  <td className="px-4 py-3 text-sm">B98765{index}</td>
-                  <td className="px-4 py-3 text-sm">Entrée Parking</td>
-                  <td className="px-4 py-3 text-sm">
-                    {index % 3 === 0 ? 'Badge non autorisé' : index % 3 === 1 ? 'Hors horaires' : 'Badge inconnu'}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                      index % 3 === 0 
-                        ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' 
-                        : index % 3 === 1 
-                          ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                          : 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
-                    }`}>
-                      {index % 3 === 0 ? 'Haute' : index % 3 === 1 ? 'Moyenne' : 'Basse'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    <Button variant="ghost" size="sm">Détails</Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Skeleton className="h-10 w-64" />
         </div>
-      </ChartCard>
+        <Skeleton className="h-24 w-full mb-6" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-80 w-full" />
+        </div>
+        <Skeleton className="h-96 w-full mb-6" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto p-4">
+      <div className="flex justify-between items-center mb-6">
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-semibold">Rapport d'anomalies</h1>
+          <AnomalyExportMenu startDate={startDate} endDate={endDate} />
+        </div>
+        <DateRangePicker 
+          value={dateRange} 
+          onChange={handleDateRangeChange} 
+          align="end"
+        />
+      </div>
+
+      <div className="mb-6">
+        <AnomalyStatistics startDate={startDate} endDate={endDate} />
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+        <AnomalyDailyChart startDate={startDate} endDate={endDate} />
+        <AnomalyTypeChart startDate={startDate} endDate={endDate} />
+      </div>
+
+      <div className="mb-6">
+        <RecentAnomalies startDate={startDate} endDate={endDate} />
+      </div>
     </div>
   );
 } 

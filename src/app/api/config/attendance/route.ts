@@ -1,63 +1,54 @@
 import { NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import AttendanceConfig, { IAttendanceConfig } from '@/models/AttendanceConfig';
-import { connectToDatabase } from '@/lib/mongodb';
+import prisma from '@/lib/prisma';
 
-// GET /api/config/attendance - Récupérer la configuration d'assiduité
+// GET /api/config/attendance - Récupérer les paramètres d'assiduité
 export async function GET() {
   try {
-    await connectToDatabase();
+    // Récupérer les paramètres d'assiduité (toujours une seule entrée - on prend la première)
+    let parameters = await prisma.attendance_parameters.findFirst();
     
-    // Récupérer la configuration d'assiduité (toujours une seule entrée)
-    let config = await AttendanceConfig.findOne().lean() as any;
-    
-    // Si aucune configuration n'existe, créer une configuration par défaut
-    if (!config) {
-      const defaultConfig = new AttendanceConfig();
-      await defaultConfig.save();
-      config = defaultConfig.toObject();
+    // Si aucun paramètre n'existe, créer des paramètres par défaut
+    if (!parameters) {
+      parameters = await prisma.attendance_parameters.create({
+        data: {
+          // Les valeurs par défaut sont définies dans le schéma Prisma
+        }
+      });
     }
     
     // Formater les données pour l'API
     return NextResponse.json({
-      id: config._id.toString(),
-      startHour: config.startHour,
-      endHour: config.endHour,
-      dailyHours: config.dailyHours,
-      countWeekends: config.countWeekends,
-      countHolidays: config.countHolidays,
-      lunchBreak: config.lunchBreak,
-      lunchBreakDuration: config.lunchBreakDuration,
-      lunchBreakStart: config.lunchBreakStart,
-      lunchBreakEnd: config.lunchBreakEnd,
-      allowOtherBreaks: config.allowOtherBreaks,
-      maxBreakTime: config.maxBreakTime,
-      absenceRequestDeadline: config.absenceRequestDeadline,
-      overtimeRequestDeadline: config.overtimeRequestDeadline,
-      roundAttendanceTime: config.roundAttendanceTime,
-      roundingInterval: config.roundingInterval,
-      roundingDirection: config.roundingDirection,
-      lastUpdated: config.lastUpdated,
-      updatedBy: config.updatedBy
+      id: parameters.id,
+      startHour: parameters.start_hour,
+      endHour: parameters.end_hour,
+      dailyHours: parameters.daily_hours,
+      countWeekends: parameters.count_weekends,
+      countHolidays: parameters.count_holidays,
+      lunchBreak: parameters.lunch_break,
+      lunchBreakDuration: parameters.lunch_break_duration,
+      lunchBreakStart: parameters.lunch_break_start,
+      lunchBreakEnd: parameters.lunch_break_end,
+      allowOtherBreaks: parameters.allow_other_breaks,
+      maxBreakTime: parameters.max_break_time,
+      absenceRequestDeadline: parameters.absence_request_deadline,
+      overtimeRequestDeadline: parameters.overtime_request_deadline,
+      roundAttendanceTime: parameters.round_attendance_time,
+      roundingInterval: parameters.rounding_interval,
+      roundingDirection: parameters.rounding_direction,
+      lastUpdated: parameters.last_updated,
+      updatedBy: parameters.updated_by
     });
   } catch (error) {
-    console.error('Erreur lors de la récupération de la configuration:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
+    console.error('Erreur lors de la récupération des paramètres:', error);
     
     return NextResponse.json(
-      { error: 'Une erreur s\'est produite lors de la récupération de la configuration' },
+      { error: 'Une erreur s\'est produite lors de la récupération des paramètres' },
       { status: 500 }
     );
   }
 }
 
-// PUT /api/config/attendance - Mettre à jour la configuration d'assiduité
+// PUT /api/config/attendance - Mettre à jour les paramètres d'assiduité
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
@@ -70,62 +61,82 @@ export async function PUT(request: Request) {
       );
     }
     
-    await connectToDatabase();
+    // Trouver les paramètres existants ou en créer des nouveaux
+    const existingParameters = await prisma.attendance_parameters.findFirst();
     
-    // Trouver la configuration existante ou en créer une nouvelle
-    let config = await AttendanceConfig.findOne();
-    if (!config) {
-      config = new AttendanceConfig();
-    }
-    
-    // Mettre à jour les champs avec les nouvelles valeurs
-    // Heures de travail
-    config.startHour = body.startHour;
-    config.endHour = body.endHour;
-    config.dailyHours = body.dailyHours;
-    config.countWeekends = body.countWeekends ?? config.countWeekends;
-    config.countHolidays = body.countHolidays ?? config.countHolidays;
-    
-    // Paramètres de pause
-    config.lunchBreak = body.lunchBreak ?? config.lunchBreak;
-    config.lunchBreakDuration = body.lunchBreakDuration ?? config.lunchBreakDuration;
-    config.lunchBreakStart = body.lunchBreakStart ?? config.lunchBreakStart;
-    config.lunchBreakEnd = body.lunchBreakEnd ?? config.lunchBreakEnd;
-    config.allowOtherBreaks = body.allowOtherBreaks ?? config.allowOtherBreaks;
-    config.maxBreakTime = body.maxBreakTime ?? config.maxBreakTime;
-    
-    // Dates limites
-    config.absenceRequestDeadline = body.absenceRequestDeadline ?? config.absenceRequestDeadline;
-    config.overtimeRequestDeadline = body.overtimeRequestDeadline ?? config.overtimeRequestDeadline;
-    
-    // Paramètres d'arrondi
-    config.roundAttendanceTime = body.roundAttendanceTime ?? config.roundAttendanceTime;
-    config.roundingInterval = body.roundingInterval ?? config.roundingInterval;
-    config.roundingDirection = body.roundingDirection ?? config.roundingDirection;
-    
-    // Métadonnées
-    config.lastUpdated = new Date();
-    config.updatedBy = body.updatedBy || 'system';
-    
-    // Sauvegarder les modifications
-    await config.save();
+    const parameters = await prisma.attendance_parameters.upsert({
+      where: {
+        id: existingParameters?.id || 1, // Utilise l'ID existant ou 1 par défaut
+      },
+      update: {
+        // Heures de travail
+        start_hour: body.startHour,
+        end_hour: body.endHour,
+        daily_hours: parseFloat(body.dailyHours),
+        count_weekends: body.countWeekends !== undefined ? body.countWeekends : undefined,
+        count_holidays: body.countHolidays !== undefined ? body.countHolidays : undefined,
+        
+        // Paramètres de pause
+        lunch_break: body.lunchBreak !== undefined ? body.lunchBreak : undefined,
+        lunch_break_duration: body.lunchBreakDuration !== undefined ? body.lunchBreakDuration : undefined,
+        lunch_break_start: body.lunchBreakStart || undefined,
+        lunch_break_end: body.lunchBreakEnd || undefined,
+        allow_other_breaks: body.allowOtherBreaks !== undefined ? body.allowOtherBreaks : undefined,
+        max_break_time: body.maxBreakTime !== undefined ? body.maxBreakTime : undefined,
+        
+        // Dates limites
+        absence_request_deadline: body.absenceRequestDeadline !== undefined ? body.absenceRequestDeadline : undefined,
+        overtime_request_deadline: body.overtimeRequestDeadline !== undefined ? body.overtimeRequestDeadline : undefined,
+        
+        // Paramètres d'arrondi
+        round_attendance_time: body.roundAttendanceTime !== undefined ? body.roundAttendanceTime : undefined,
+        rounding_interval: body.roundingInterval !== undefined ? body.roundingInterval : undefined,
+        rounding_direction: body.roundingDirection || undefined,
+        
+        // Métadonnées
+        last_updated: new Date(),
+        updated_by: body.updatedBy || 'system',
+      },
+      create: {
+        // Heures de travail
+        start_hour: body.startHour,
+        end_hour: body.endHour,
+        daily_hours: parseFloat(body.dailyHours),
+        count_weekends: body.countWeekends || false,
+        count_holidays: body.countHolidays || false,
+        
+        // Paramètres de pause
+        lunch_break: body.lunchBreak || true,
+        lunch_break_duration: body.lunchBreakDuration || 60,
+        lunch_break_start: body.lunchBreakStart || '12:00',
+        lunch_break_end: body.lunchBreakEnd || '13:00',
+        allow_other_breaks: body.allowOtherBreaks || true,
+        max_break_time: body.maxBreakTime || 30,
+        
+        // Dates limites
+        absence_request_deadline: body.absenceRequestDeadline || 3,
+        overtime_request_deadline: body.overtimeRequestDeadline || 5,
+        
+        // Paramètres d'arrondi
+        round_attendance_time: body.roundAttendanceTime || false,
+        rounding_interval: body.roundingInterval || 15,
+        rounding_direction: body.roundingDirection || 'nearest',
+        
+        // Métadonnées
+        last_updated: new Date(),
+        updated_by: body.updatedBy || 'system',
+      }
+    });
     
     return NextResponse.json({
-      id: config._id.toString(),
-      message: 'Configuration mise à jour avec succès'
+      id: parameters.id,
+      message: 'Paramètres mis à jour avec succès'
     });
   } catch (error) {
-    console.error('Erreur lors de la mise à jour de la configuration:', error);
-    
-    if (error instanceof mongoose.Error || error instanceof Error) {
-      return NextResponse.json(
-        { error: error.message },
-        { status: 500 }
-      );
-    }
+    console.error('Erreur lors de la mise à jour des paramètres:', error);
     
     return NextResponse.json(
-      { error: 'Une erreur s\'est produite lors de la mise à jour de la configuration' },
+      { error: 'Une erreur s\'est produite lors de la mise à jour des paramètres' },
       { status: 500 }
     );
   }

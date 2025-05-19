@@ -1,175 +1,282 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
-import mongoose from 'mongoose';
-import { connectToDatabase } from '@/lib/mongodb';
-import { authOptions, isAdmin, CustomSession } from '@/lib/auth';
+import { z } from 'zod';
+import { authOptions, isAdmin } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { SecurityIncidentService } from '@/lib/security/incidentService';
 
-// Define models
-const permissionSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  code: { type: String, required: true, unique: true },
-  isModule: { type: Boolean, default: false },
-  isFunction: { type: Boolean, default: false },
-  parentModule: { type: String, default: null },
-  view: { type: Boolean, default: false },
-  create: { type: Boolean, default: false },
-  edit: { type: Boolean, default: false },
-  delete: { type: Boolean, default: false },
-  approve: { type: Boolean, default: false },
-  export: { type: Boolean, default: false },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-  module: { type: String, default: 'default' },
-  description: { type: String, default: '' }
+// Schéma de validation pour la création d'une permission
+const createPermissionSchema = z.object({
+  name: z.string().min(3, "Le nom doit contenir au moins 3 caractères"),
+  code: z.string().min(2, "Le code doit contenir au moins 2 caractères"),
+  description: z.string().optional(),
+  module: z.string().min(2, "Le module doit contenir au moins 2 caractères"),
 });
 
-// Use or create model
-const Permission = mongoose.models.Permission || mongoose.model('Permission', permissionSchema);
+// Schéma de validation pour la mise à jour d'une permission
+const updatePermissionSchema = z.object({
+  name: z.string().min(3, "Le nom doit contenir au moins 3 caractères").optional(),
+  code: z.string().min(2, "Le code doit contenir au moins 2 caractères").optional(),
+  description: z.string().optional(),
+  module: z.string().min(2, "Le module doit contenir au moins 2 caractères").optional(),
+});
 
-// GET /api/permissions - Récupérer la liste des permissions
-export async function GET(request: NextRequest) {
+/**
+ * GET /api/permissions
+ * Récupérer la liste des permissions
+ */
+export async function GET(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions) as CustomSession;
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
     
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
-    
-    const { searchParams } = new URL(request.url);
-    const moduleFilter = searchParams.get('module');
-    const search = searchParams.get('search');
-    const profileId = searchParams.get('profileId');
-    
-    await connectToDatabase();
-    
-    let query: any = {};
-    
-    // Filter by module if specified
-    if (moduleFilter) {
-      query.parentModule = moduleFilter;
+
+    // Seuls les admins peuvent voir la liste des permissions
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
+
+    // Extraire les paramètres de requête pour la pagination et les filtres
+    const url = new URL(req.url);
+    const page = parseInt(url.searchParams.get('page') || '1');
+    const limit = parseInt(url.searchParams.get('limit') || '50'); // Plus élevé car souvent on veut voir toutes les permissions
+    const search = url.searchParams.get('search') || '';
+    const module = url.searchParams.get('module') || '';
     
-    // Search by name if specified
+    // Calculer le décalage pour la pagination
+    const skip = (page - 1) * limit;
+    
+    // Construire la requête avec les filtres
+    const where: any = {};
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      where.OR = [
+        { name: { contains: search } },
+        { code: { contains: search } },
+        { description: { contains: search } }
+      ];
     }
     
-    // If profileId is provided, we would query profile-specific permissions
-    // This would likely require a different model or a join operation
-    // For now, we'll just fetch the base permissions
+    if (module) {
+      where.module = module;
+    }
     
-    const permissions = await Permission.find(query).sort({ isModule: -1, name: 1 }).lean();
-    
-    return NextResponse.json({ 
-      permissions: permissions.map((p: any) => ({
-        id: p._id.toString(),
-        name: p.name,
-        code: p.code,
-        isModule: p.isModule,
-        isFunction: p.isFunction,
-        parentModule: p.parentModule,
-        view: p.view,
-        create: p.create,
-        edit: p.edit,
-        delete: p.delete,
-        approve: p.approve,
-        export: p.export
-      })) 
+    // Récupérer les permissions avec pagination
+    const permissions = await prisma.permission.findMany({
+      where,
+      include: {
+        _count: {
+          select: {
+            profile_permissions: true // Compter le nombre de profils par permission
+          }
+        }
+      },
+      skip,
+      take: limit,
+      orderBy: [
+        { module: 'asc' },
+        { name: 'asc' }
+      ]
     });
-  } catch (error) {
+    
+    // Compter le nombre total de permissions pour la pagination
+    const total = await prisma.permission.count({ where });
+    
+    // Récupérer la liste des modules distincts pour les filtres
+    const modules = await prisma.permission.findMany({
+      select: {
+        module: true
+      },
+      distinct: ['module'],
+      orderBy: {
+        module: 'asc'
+      }
+    });
+    
+    // Transformer les données pour le retour
+    const formattedPermissions = permissions.map(permission => ({
+      id: permission.id,
+      name: permission.name,
+      code: permission.code,
+      description: permission.description || '',
+      module: permission.module,
+      profileCount: permission._count.profile_permissions
+    }));
+    
+    // Journaliser l'accès à la liste des permissions
+    await SecurityIncidentService.logIncident(
+      'admin_action',
+      `Liste des permissions consultée`,
+      req.headers.get('x-forwarded-for') || 'unknown',
+      'info',
+      session.user?.id ? String(session.user.id) : undefined,
+      session.user?.email || ''
+    );
+    
+    return NextResponse.json({
+      permissions: formattedPermissions,
+      modules: modules.map(m => m.module),
+      pagination: {
+        page,
+        limit,
+        total,
+        pages: Math.ceil(total / limit)
+      }
+    });
+  } catch (error: any) {
     console.error('Erreur lors de la récupération des permissions:', error);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erreur serveur lors de la récupération des permissions" },
+      { status: 500 }
+    );
   }
 }
 
-// POST /api/permissions - Créer une nouvelle permission
-export async function POST(request: NextRequest) {
+/**
+ * POST /api/permissions
+ * Créer une nouvelle permission
+ */
+export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions) as CustomSession;
+    // Vérifier l'authentification et les permissions
+    const session = await getServerSession(authOptions);
     
-    if (!session || !session.user) {
-      return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
     
-    // Check admin permissions
+    // Seuls les admins peuvent créer des permissions
     if (!isAdmin(session)) {
-      return NextResponse.json({ error: 'Accès restreint. Permissions administrateur requises.' }, { status: 403 });
+      return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
     
-    const data = await request.json();
+    // Extraire et valider les données
+    const body = await req.json();
+    const validationResult = createPermissionSchema.safeParse(body);
     
-    // Validate required fields
-    if (!data.name || !data.code) {
-      return NextResponse.json({ error: 'Nom et code de permission requis' }, { status: 400 });
+    if (!validationResult.success) {
+      return NextResponse.json(
+        { error: "Données invalides", details: validationResult.error.format() },
+        { status: 400 }
+      );
     }
     
-    await connectToDatabase();
+    const { name, code, description, module } = validationResult.data;
     
-    // Check if permission with this code already exists
-    const existingPermission = await Permission.findOne({ code: data.code });
-    if (existingPermission) {
-      return NextResponse.json({ error: 'Une permission avec ce code existe déjà' }, { status: 409 });
-    }
-
-    // Vérifier que le schéma de la collection est à jour
-    if (mongoose.connection.db) {
-      const collections = await mongoose.connection.db.listCollections({ name: 'permissions' }).toArray();
-      if (collections.length > 0) {
-        try {
-          // Supprimer les index problématiques si nécessaire
-          const indexes = await mongoose.connection.db.collection('permissions').indexes();
-          const problematicIndex = indexes.find(i => 
-            i.name === 'module_1_action_1' || 
-            (i.key && i.key.module && i.key.action));
-          
-          if (problematicIndex && problematicIndex.name) {
-            console.log('Suppression de l\'index problématique:', problematicIndex.name);
-            await mongoose.connection.db.collection('permissions').dropIndex(problematicIndex.name);
-          }
-        } catch (error) {
-          console.warn('Erreur lors de la vérification des index:', error);
-        }
-      }
-    }
-    
-    // Create new permission
-    const newPermission = new Permission({
-      name: data.name,
-      code: data.code,
-      isModule: data.isModule || false,
-      isFunction: data.isFunction || false,
-      module: data.module || (data.isModule ? data.name : 'default'),
-      parentModule: data.parentModule || null,
-      view: data.view !== undefined ? data.view : false,
-      create: data.create !== undefined ? data.create : false,
-      edit: data.edit !== undefined ? data.edit : false,
-      delete: data.delete !== undefined ? data.delete : false,
-      approve: data.approve !== undefined ? data.approve : false,
-      export: data.export !== undefined ? data.export : false,
-      description: data.description || `Permission pour ${data.name}`
+    // Vérifier si le code est déjà utilisé (doit être unique)
+    const existingPermission = await prisma.permission.findFirst({
+      where: { code }
     });
     
-    await newPermission.save();
+    if (existingPermission) {
+      return NextResponse.json(
+        { error: "Une permission avec ce code existe déjà" },
+        { status: 400 }
+      );
+    }
     
-    return NextResponse.json({ 
-      permission: {
-        id: newPermission._id.toString(),
-        name: newPermission.name,
-        code: newPermission.code,
-        isModule: newPermission.isModule,
-        isFunction: newPermission.isFunction,
-        parentModule: newPermission.parentModule,
-        view: newPermission.view,
-        create: newPermission.create,
-        edit: newPermission.edit,
-        delete: newPermission.delete,
-        approve: newPermission.approve,
-        export: newPermission.export
-      },
-      message: 'Permission créée avec succès' 
+    // Créer la permission
+    const permission = await prisma.permission.create({
+      data: {
+        name,
+        code,
+        description,
+        module
+      }
+    });
+    
+    // Journaliser la création de la permission
+    await SecurityIncidentService.logIncident(
+      'admin_action',
+      `Permission créée: ${code} (${name})`,
+      req.headers.get('x-forwarded-for') || 'unknown',
+      'info',
+      session.user?.id ? String(session.user.id) : undefined,
+      session.user?.email || ''
+    );
+    
+    return NextResponse.json({
+      id: permission.id,
+      name: permission.name,
+      code: permission.code,
+      description: permission.description,
+      module: permission.module
     }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur lors de la création de la permission:', error);
-    return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Erreur serveur lors de la création de la permission" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/permissions
+ * Supprimer des permissions
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    // Vérifier l'authentification et les permissions
+    const session = await getServerSession(authOptions);
+    
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+    
+    // Seuls les admins peuvent supprimer des permissions
+    if (!isAdmin(session)) {
+      return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
+    }
+    
+    // Extraire les données
+    const url = new URL(req.url);
+    const ids = url.searchParams.get('ids');
+    
+    if (!ids) {
+      return NextResponse.json(
+        { error: "IDs de permissions requis" },
+        { status: 400 }
+      );
+    }
+    
+    const permissionIds = ids.split(',').map(Number);
+    
+    // Supprimer d'abord les associations avec les profils
+    await prisma.profilePermission.deleteMany({
+      where: {
+        permission_id: { in: permissionIds }
+      }
+    });
+    
+    // Puis supprimer les permissions
+    const result = await prisma.permission.deleteMany({
+      where: {
+        id: { in: permissionIds }
+      }
+    });
+    
+    // Journaliser la suppression
+    await SecurityIncidentService.logIncident(
+      'admin_action',
+      `Permissions supprimées: ${permissionIds.length} permissions`,
+      req.headers.get('x-forwarded-for') || 'unknown',
+      'warning',
+      session.user?.id ? String(session.user.id) : undefined,
+      session.user?.email || ''
+    );
+    
+    return NextResponse.json({
+      success: true,
+      deleted: result.count
+    });
+  } catch (error: any) {
+    console.error('Erreur lors de la suppression des permissions:', error);
+    return NextResponse.json(
+      { error: "Erreur serveur lors de la suppression des permissions" },
+      { status: 500 }
+    );
   }
 } 

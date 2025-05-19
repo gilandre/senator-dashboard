@@ -1,34 +1,36 @@
-import mongoose from 'mongoose';
+// DÉPRÉCIÉ: Ce fichier est maintenu uniquement pour des raisons de compatibilité
+// Utilisez prisma.ts à la place pour toutes les opérations de base de données
 
-// MongoDB connection string - use environment variable or default to localhost
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/senatorDb';
+import { prisma } from './prisma';
+
+console.warn(
+  '⚠️ AVERTISSEMENT: La connexion MongoDB est dépréciée. ' +
+  'Utilisez Prisma à la place pour toutes les opérations de base de données.'
+);
 
 /**
- * Connect to MongoDB database
+ * DÉPRÉCIÉ: Fonction de compatibilité qui ne connecte plus à MongoDB
+ * @deprecated Utilisez prisma à la place
  */
 export async function connectToDatabase() {
-  // If we're already connected, return the existing connection
-  if (mongoose.connection.readyState === 1) {
-    return mongoose.connection;
-  }
+  console.warn(
+    '⚠️ AVERTISSEMENT: connectToDatabase() est déprécié. ' +
+    'Utilisez prisma à la place pour toutes les opérations de base de données.'
+  );
   
-  try {
-    // Establish a new connection
-    await mongoose.connect(MONGODB_URI);
-    console.log('Connected to MongoDB');
-    return mongoose.connection;
-  } catch (error) {
-    console.error('MongoDB connection error:', error);
-    throw error;
-  }
+  // Retourne simplement une promesse résolue
+  return Promise.resolve({ readyState: 1 });
 }
 
 /**
- * Disconnect from MongoDB database
+ * DÉPRÉCIÉ: Fonction de compatibilité qui ne déconnecte plus de MongoDB
+ * @deprecated Utilisez $disconnect sur l'instance Prisma si nécessaire
  */
 export async function disconnectFromDatabase() {
-  if (mongoose.connection.readyState !== 0) {
-    await mongoose.disconnect();
-    console.log('Disconnected from MongoDB');
-  }
+  console.warn(
+    '⚠️ AVERTISSEMENT: disconnectFromDatabase() est déprécié. ' +
+    'Utilisez prisma.$disconnect() si nécessaire.'
+  );
+  
+  return Promise.resolve(true);
 } 

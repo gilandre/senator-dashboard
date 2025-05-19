@@ -6,50 +6,50 @@ import StatsCard from '@/components/dashboard/stats-card';
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: "Départements | SenatorFX",
-  description: "Gestion des départements et leurs accès",
+  title: "Groupes | SenatorFX",
+  description: "Gestion des groupes et leurs accès",
 };
 
 export default function DepartmentsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Départements</h1>
+        <h1 className="text-2xl font-bold">Groupes</h1>
         <div className="flex space-x-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
             <input 
               type="text" 
-              placeholder="Rechercher un département..." 
+              placeholder="Rechercher un groupe..." 
               className="pl-9 py-2 pr-4 rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900"
-              aria-label="Rechercher un département"
+              aria-label="Rechercher un groupe"
             />
           </div>
           <Button size="sm">
             <Plus className="h-4 w-4 mr-2" />
-            Nouveau département
+            Nouveau groupe
           </Button>
         </div>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard 
-          title="Départements" 
+          title="Groupes" 
           value={8} 
           icon={<Building className="h-6 w-6 text-blue-500" />}
-          description="Nombre total de départements"
+          description="Nombre total de groupes"
         />
         <StatsCard 
           title="Employés" 
           value={248} 
           icon={<Users className="h-6 w-6 text-green-500" />}
-          description="Répartis dans les départements"
+          description="Répartis dans les groupes"
         />
         <StatsCard 
           title="Taille moyenne" 
           value={31} 
           icon={<PieChart className="h-6 w-6 text-orange-500" />}
-          description="Employés par département"
+          description="Employés par groupe"
         />
         <StatsCard 
           title="Plus grand" 
@@ -60,14 +60,14 @@ export default function DepartmentsPage() {
       
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard 
-          title="Liste des départements" 
-          description="Tous les départements avec le nombre d'employés"
+          title="Liste des groupes" 
+          description="Tous les groupes avec le nombre d'employés"
         >
           <div className="overflow-x-auto">
             <table className="w-full border-collapse">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-800">
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Nom du département</th>
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Nom du groupe</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Responsable</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Employés</th>
                   <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Étage</th>
@@ -105,23 +105,23 @@ export default function DepartmentsPage() {
         
         <ChartCard 
           title="Répartition des employés" 
-          description="Pourcentage d'employés par département"
+          description="Pourcentage d'employés par groupe"
         >
           <div className="h-96 flex items-center justify-center text-gray-500">
-            Graphique de répartition des employés par département
+            Graphique de répartition des employés par groupe
           </div>
         </ChartCard>
       </div>
       
       <ChartCard 
-        title="Points d'accès par département" 
-        description="Attribution des points d'accès autorisés par département"
+        title="Points d'accès par groupe" 
+        description="Attribution des points d'accès autorisés par groupe"
       >
         <div className="overflow-x-auto">
           <table className="w-full border-collapse">
             <thead>
               <tr className="border-b border-gray-200 dark:border-gray-800">
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Département</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Groupe</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Entrée principale</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Parking</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400">Étage spécifique</th>

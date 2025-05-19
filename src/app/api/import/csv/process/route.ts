@@ -1,30 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import fs from 'fs';
-import path from 'path';
-import { parse } from 'csv-parse/sync';
-import { connectToDatabase } from '@/lib/mongodb';
-import AccessLog from '@/models/AccessLog';
-import Employee from '@/models/Employee';
-import Visitor from '@/models/Visitor';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { parse } from 'csv-parse';
+import { PrismaClient } from '@prisma/client';
+import { validateCSVRecord } from '@/lib/schemas/csv-schema';
+import { NormalizedRecord, AccessLogData, ProcessingStats, ProcessingError, ProcessingOptions } from '@/types/csv-import';
+import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+import { afterImport } from '../process-hooks';
 
-// Fonction pour convertir les dates au format français DD/MM/YYYY en format ISO
-const convertFrenchDateToISO = (dateStr: string): string => {
-  if (!dateStr) return '';
-  
-  // Vérifier si la date est au format DD/MM/YYYY
-  const dateMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-  if (dateMatch) {
-    const [_, day, month, year] = dateMatch;
-    return `${year}-${month}-${day}`;
+const prismaClient = new PrismaClient();
+
+// Types pour les enums qui causent des erreurs de linter
+type AccessLogsPersonType = 'employee' | 'visitor' | 'contractor';
+type AccessLogsEventType = 
+  'entry' | 'exit' | 'access_denied' | 'user_accepted' | 'user_rejected' | 
+  'alarm' | 'system' | 'door_forced' | 'door_held' | 'door_locked' | 
+  'door_unlocked' | 'door_opened' | 'door_closed' | 'unknown';
+
+// Fonction pour logger les activités
+async function logActivity(data: { action: string, details: string, ipAddress: string }) {
+  try {
+    await prismaClient.user_activities.create({
+      data: {
+        action: data.action,
+        details: data.details,
+        ip_address: data.ipAddress,
+        timestamp: new Date()
+      }
+    });
+  } catch (error) {
+    console.error('Error logging activity:', error);
   }
-  
-  return dateStr;
+}
+
+// Convertir une date française en format ISO
+const convertFrenchDateToISO = (dateStr: string): string => {
+  const [day, month, year] = dateStr.split('/');
+  return `${year}-${month}-${day}`;
 };
 
 // Normaliser et valider un enregistrement
-const normalizeRecord = (record: any) => {
+const normalizeRecord = (record: any): NormalizedRecord => {
   // Vérifier que le record est un objet valide
   if (!record || typeof record !== 'object') {
     console.warn('Invalid record received:', record);
@@ -34,158 +51,74 @@ const normalizeRecord = (record: any) => {
       eventTime: new Date().toISOString().split('T')[1].substring(0, 8),
       isVisitor: false,
       direction: 'unknown',
+      eventType: 'unknown',
+      rawData: record
     };
   }
 
-  // Normaliser les noms des champs (insensible à la casse)
-  const normalizedRecord: Record<string, any> = {};
-  Object.entries(record).forEach(([key, value]) => {
-    // Ne pas inclure les champs vides ou non définis
-    if (value !== undefined && value !== null && value !== '') {
-      normalizedRecord[key.toLowerCase().trim()] = value;
-    }
-  });
-
-  // Extraire les champs avec prise en charge de différentes variantes
+  // Fonctions d'extraction avec gestion des variations de noms de colonnes
   const getBadgeNumber = () => {
-    return normalizedRecord.badgenumber || normalizedRecord.badge || normalizedRecord['numéro de badge'] || 
-           normalizedRecord.numérobadge || normalizedRecord.numéro || normalizedRecord.numero || 
-           normalizedRecord.cardnumber || normalizedRecord.badgeid || 'UNKNOWN';
+    return record['Numéro de badge'] || record['Badge Number'] || record['badge_number'] || '';
   };
 
   const getEventDate = () => {
-    // Trouver la date dans différents formats possibles
-    let dateValue = normalizedRecord.eventdate || normalizedRecord['date évènements'] || normalizedRecord.date || 
-                    normalizedRecord.jour || normalizedRecord.datetime?.split(' ')[0] || 
-                    normalizedRecord.dateevt;
-    
-    // Si la date n'est pas trouvée, utiliser la date actuelle
-    if (!dateValue) {
-      return new Date().toISOString().split('T')[0];
-    }
-    
-    // Si la date inclut l'heure (comme "02/12/2024 10:34:02"), extraire seulement la partie date
-    if (dateValue.includes(' ')) {
-      dateValue = dateValue.split(' ')[0];
-    }
-    
-    // Normaliser la date au format YYYY-MM-DD
-    try {
-      if (dateValue.includes('/')) {
-        const parts = dateValue.split('/');
-        if (parts.length === 3) {
-          const [day, month, year] = parts;
-          return `${year.length === 2 ? '20'+year : year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-        }
-      } else if (dateValue.includes('-')) {
-        // Vérifier si c'est déjà au format YYYY-MM-DD
-        const parts = dateValue.split('-');
-        if (parts.length === 3) {
-          if (parts[0].length === 4) {
-            return dateValue; // Déjà au bon format
-          } else {
-            // Format DD-MM-YYYY
-            const [day, month, year] = parts;
-            return `${year.length === 2 ? '20'+year : year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-          }
-        }
-      }
-      
-      // Si on arrive ici, le format n'est pas reconnu, retourner la valeur telle quelle
-      return dateValue;
-    } catch (error) {
-      console.warn('Error normalizing date:', dateValue, error);
-      return new Date().toISOString().split('T')[0]; // Date par défaut en cas d'erreur
-    }
+    const dateStr = record['Date'] || record['Event Date'] || record['event_date'] || '';
+    return dateStr ? convertFrenchDateToISO(dateStr) : new Date().toISOString().split('T')[0];
   };
 
   const getEventTime = () => {
-    // Trouver l'heure dans différents formats possibles
-    let timeValue = normalizedRecord.eventtime || normalizedRecord['heure évènements'] || normalizedRecord.time || 
-                    normalizedRecord.heure || normalizedRecord.datetime?.split(' ')[1] || 
-                    normalizedRecord.timeevt;
-    
-    // Si l'heure n'est pas trouvée, utiliser l'heure actuelle
-    if (!timeValue) {
-      return new Date().toISOString().split('T')[1].substring(0, 8);
-    }
-    
-    return timeValue;
+    return record['Heure'] || record['Time'] || record['event_time'] || '00:00:00';
   };
 
   const getFirstName = () => {
-    return normalizedRecord.firstname || normalizedRecord.prénom || normalizedRecord.prenom || '';
+    return record['Prénom'] || record['First Name'] || record['first_name'] || '';
   };
 
   const getLastName = () => {
-    return normalizedRecord.lastname || normalizedRecord.nom || '';
+    return record['Nom'] || record['Last Name'] || record['last_name'] || '';
   };
 
   const getFullName = () => {
     const firstName = getFirstName();
     const lastName = getLastName();
-    if (firstName && lastName) {
-      return `${firstName} ${lastName}`;
-    } else if (firstName) {
-      return firstName;
-    } else if (lastName) {
-      return lastName;
-    } else {
-      return normalizedRecord.fullname || normalizedRecord.name || normalizedRecord.nom_complet || '';
-    }
+    return firstName && lastName ? `${firstName} ${lastName}` : '';
   };
 
-  // Extraire les autres champs avec gestion des cas non définis
   const getController = () => {
-    return normalizedRecord.controller || normalizedRecord.centrale || 
-           normalizedRecord.contrôleur || normalizedRecord.controleur || '';
+    return record['Contrôleur'] || record['Controller'] || record['controller'] || '';
   };
 
   const getReader = () => {
-    return normalizedRecord.reader || normalizedRecord.lecteur || '';
+    return record['Lecteur'] || record['Reader'] || record['reader'] || '';
   };
 
   const getEventType = () => {
-    const type = normalizedRecord.eventtype || normalizedRecord['nature evenement'] || 
-                 normalizedRecord.type || normalizedRecord.event || '';
-    // Normaliser le type d'événement
-    if (/entr[ée]e|arrival|in|input/i.test(type)) {
-      return 'entry';
-    } else if (/sortie|departure|out|output/i.test(type)) {
-      return 'exit';
-    }
-    return type;
+    return record['Nature Evenement'] || record['Event Type'] || record['event_type'] || 'unknown';
   };
 
   const getDepartment = () => {
-    return normalizedRecord.department || normalizedRecord.département || normalizedRecord.service || '';
+    return record['Département'] || record['Department'] || record['department'] || '';
   };
 
   const getGroup = () => {
-    return normalizedRecord.group || normalizedRecord.groupe || '';
+    return record['Groupe'] || record['Group'] || record['group'] || '';
   };
 
-  // Déterminer si c'est un visiteur basé sur le groupe ou autre champ
   const isVisitor = () => {
-    const group = getGroup().toLowerCase();
-    return group.includes('visit') || group.includes('extern') || 
-           normalizedRecord.isvisitor === true || normalizedRecord.visitor === true ||
-           normalizedRecord.isvisitor === 'true' || normalizedRecord.visitor === 'true' ||
-           normalizedRecord.statut?.toLowerCase().includes('visiteur');
+    const type = record['Type'] || record['Person Type'] || record['person_type'] || '';
+    return type.toLowerCase().includes('visitor') || type.toLowerCase().includes('visiteur');
   };
 
-  // Déterminer la direction (entrée/sortie) basée sur le type d'événement
   const getDirection = () => {
-    const type = getEventType().toLowerCase();
-    if (type === 'entry' || /entr[ée]e|in|input|arriv[ée]e/i.test(type)) {
-      return 'in';
-    } else if (type === 'exit' || /sortie|out|output|d[ée]part/i.test(type)) {
-      return 'out';
-    }
-    return 'unknown';
+    const direction = record['Direction'] || record['direction'] || '';
+    return direction.toLowerCase().includes('in') || direction.toLowerCase().includes('entrée') ? 'in' : 'out';
   };
 
-  // Données normalisées
+  const getStatus = () => {
+    return record['Statut'] || record['Status'] || record['status'] || '';
+  };
+
+  // Retourner l'enregistrement normalisé
   return {
     badgeNumber: getBadgeNumber(),
     firstName: getFirstName(),
@@ -200,320 +133,434 @@ const normalizeRecord = (record: any) => {
     group: getGroup(),
     isVisitor: isVisitor(),
     direction: getDirection(),
-    rawData: record,
+    status: getStatus(),
+    rawData: record
   };
 };
 
-// Enregistrer ou mettre à jour un employé/visiteur
-const savePersonData = async (record: any) => {
+// Sauvegarder les données de la personne
+const savePersonData = async (record: NormalizedRecord) => {
   try {
-    // Si le badge n'existe pas, on ne peut pas associer l'enregistrement
-    if (!record.badgeNumber) return null;
-    
-    // Données communes pour employés et visiteurs
-    const personData = {
-      badgeNumber: record.badgeNumber,
-      firstName: record.firstName || '',
-      lastName: record.lastName || '',
-      fullName: record.fullName || '',
-      department: record.department || '',
-      status: record.status || '',
-      group: record.group || '',
-      updatedAt: new Date()
-    };
-    
-    // Si c'est un visiteur
     if (record.isVisitor) {
-      // Rechercher un visiteur existant par numéro de badge
-      const existingVisitor = await Visitor.findOne({ badgeNumber: record.badgeNumber });
-      
-      if (existingVisitor) {
-        // Mettre à jour le visiteur existant
-        await Visitor.findByIdAndUpdate(existingVisitor._id, personData);
-        return existingVisitor._id;
-      } else {
-        // Créer un nouveau visiteur
-        const newVisitor = new Visitor({
-          ...personData,
-          createdAt: new Date()
-        });
-        const savedVisitor = await newVisitor.save();
-        return savedVisitor._id;
-      }
-    } 
-    // Si c'est un employé
-    else {
-      // Rechercher un employé existant par numéro de badge
-      const existingEmployee = await Employee.findOne({ badgeNumber: record.badgeNumber });
-      
-      if (existingEmployee) {
-        // Mettre à jour l'employé existant
-        await Employee.findByIdAndUpdate(existingEmployee._id, personData);
-        return existingEmployee._id;
-      } else {
-        // Créer un nouvel employé
-        const newEmployee = new Employee({
-          ...personData,
-          createdAt: new Date()
-        });
-        const savedEmployee = await newEmployee.save();
-        return savedEmployee._id;
-      }
+      await prismaClient.visitors.upsert({
+        where: { badge_number: record.badgeNumber },
+        update: {
+          first_name: record.firstName || '',
+          last_name: record.lastName || '',
+          company: record.department || '',
+          last_seen: new Date(),
+          access_count: { increment: 1 },
+          updated_at: new Date()
+        },
+        create: {
+          badge_number: record.badgeNumber,
+          first_name: record.firstName || '',
+          last_name: record.lastName || '',
+          company: record.department || '',
+          first_seen: new Date(),
+          last_seen: new Date(),
+          access_count: 1,
+          status: 'active'
+        }
+      });
+    } else {
+      await prismaClient.employees.upsert({
+        where: { badge_number: record.badgeNumber },
+        update: {
+          first_name: record.firstName || '',
+          last_name: record.lastName || '',
+          department: record.department || '',
+          updated_at: new Date()
+        },
+        create: {
+          badge_number: record.badgeNumber,
+          first_name: record.firstName || '',
+          last_name: record.lastName || '',
+          department: record.department || '',
+          status: 'active'
+        }
+      });
     }
   } catch (error) {
     console.error('Error saving person data:', error);
-    return null;
+    throw error;
   }
 };
 
-export async function POST(req: NextRequest) {
-  try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    // Décodez les données JSON du corps de la requête
-    const { filePath } = await req.json();
-
-    if (!filePath) {
-      return NextResponse.json({ error: 'File path is required' }, { status: 400 });
-    }
-
-    // Vérifiez si le fichier existe
-    if (!fs.existsSync(filePath)) {
-      return NextResponse.json({ error: 'File not found' }, { status: 404 });
-    }
-
-    // Traitez le fichier CSV
-    const stats = await processCSVFile(filePath);
-
-    // Retournez un message de succès
-    return NextResponse.json({
-      message: 'CSV file processed successfully',
-      stats,
-    });
-
-  } catch (error) {
-    console.error('Error processing CSV file:', error);
-    return NextResponse.json({ 
-      error: 'Failed to process CSV file',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+// Fonction pour mapper les valeurs de event_type vers l'enum
+const mapEventType = (rawType: string): AccessLogsEventType => {
+  const normalizedType = rawType.toLowerCase().trim();
+  
+  switch (normalizedType) {
+    case 'utilisateur inconnu':
+      return 'user_rejected';
+    case 'utilisateur accepté':
+      return 'user_accepted';
+    case 'entrée':
+    case 'entree':
+      return 'entry';
+    case 'sortie':
+      return 'exit';
+    case 'accès refusé':
+    case 'acces refuse':
+      return 'access_denied';
+    case 'alarme':
+      return 'alarm';
+    case 'système':
+    case 'systeme':
+      return 'system';
+    case 'porte forcée':
+    case 'porte forcee':
+      return 'door_forced';
+    case 'porte maintenue':
+      return 'door_held';
+    case 'porte verrouillée':
+    case 'porte verrouillee':
+      return 'door_locked';
+    case 'porte déverrouillée':
+    case 'porte deverrouillee':
+      return 'door_unlocked';
+    case 'porte ouverte':
+      return 'door_opened';
+    case 'porte fermée':
+    case 'porte fermee':
+      return 'door_closed';
+    default:
+      return 'unknown';
   }
-}
+};
 
-// Traitement du fichier CSV
-async function processCSVFile(filePath: string) {
-  // Connexion à la base de données
-  await connectToDatabase();
+// Fonction pour traiter les enregistrements par lots
+async function processBatch(
+  records: NormalizedRecord[],
+  prisma: PrismaClient
+): Promise<{ success: number; errors: ProcessingError[] }> {
+  const errors: ProcessingError[] = [];
+  let success = 0;
 
-  // Lisez le contenu du fichier
-  const fileContent = fs.readFileSync(filePath, { encoding: 'utf-8' });
+  try {
+    await prisma.$transaction(async (tx) => {
+      for (const record of records) {
+        try {
+          // Créer l'enregistrement d'accès
+          const accessLogData = {
+            badge_number: record.badgeNumber,
+            person_type: record.isVisitor ? 'visitor' : 'employee',
+            event_date: new Date(record.eventDate),
+            event_time: new Date(`1970-01-01T${record.eventTime}`),
+            reader: record.reader || null,
+            terminal: record.controller || null,
+            event_type: mapEventType(record.eventType || 'unknown'),
+            direction: record.direction || null,
+            full_name: record.fullName || null,
+            group_name: record.group || null,
+            processed: false,
+            created_at: new Date(),
+            raw_event_type: record.eventType || null
+          };
 
-  // Statistiques pour le rapport
-  const stats = {
-    totalRecords: 0,
-    successfullyProcessed: 0,
-    skippedRecords: 0,
-    errorRecords: 0,
-    duplicates: 0,
-    employees: 0,
-    visitors: 0,
-    entriesCount: 0,
-    exitsCount: 0,
-    warnings: [] as string[],
-  };
-
-  // Analysez le CSV
-  return new Promise<typeof stats>((resolve, reject) => {
-    const records: any[] = [];
-    try {
-      // Limiter à 12 colonnes max
-      const MAX_COLUMNS = 12;
-
-      // Prétraiter le contenu pour s'assurer qu'il n'y a que 12 colonnes
-      const lines = fileContent.split('\n');
-      const cleanedLines: string[] = [];
-      
-      if (lines.length > 0) {
-        // Traiter l'en-tête - limiter à 12 colonnes
-        const headerLine = lines[0];
-        const headerColumns = headerLine.split(';');
-        const trimmedHeader = headerColumns.slice(0, MAX_COLUMNS).join(';');
-        cleanedLines.push(trimmedHeader);
-        
-        // Traiter les lignes de données - limiter à 12 colonnes
-        for (let i = 1; i < lines.length; i++) {
-          if (lines[i].trim() === '') continue;
-          const dataColumns = lines[i].split(';');
-          const trimmedData = dataColumns.slice(0, MAX_COLUMNS).join(';');
-          cleanedLines.push(trimmedData);
+          await tx.access_logs.create({ data: accessLogData });
+          await savePersonData(record);
+          success++;
+        } catch (error) {
+          console.error('Error processing record:', error);
+          errors.push({
+            record,
+            error: error instanceof Error ? error : new Error('Unknown error'),
+            timestamp: new Date()
+          });
         }
       }
-      
-      // Réunir les lignes nettoyées
-      const cleanedContent = cleanedLines.join('\n');
+    });
+  } catch (error) {
+    console.error('Transaction failed:', error);
+    throw error;
+  }
 
-      const parser = parse(cleanedContent, {
-        columns: true,
-        skip_empty_lines: true,
-        trim: true,
-        relax_column_count: true, // Permet des lignes avec un nombre de colonnes différent
-        delimiter: ';', // Explicitement définir le délimiteur
-        from_line: 1, // Commencer à la première ligne
-        // Ignorer les erreurs et essayer de continuer
-        on_record: (record, { lines }) => {
-          try {
-            stats.totalRecords++;
-            
-            // Vérifier si le record est un objet valide
-            if (!record || typeof record !== 'object' || Object.keys(record).length === 0) {
-              stats.skippedRecords++;
-              stats.warnings.push(`Ligne ${lines}: Format de ligne invalide`);
-              return null; // Ignorer cet enregistrement
-            }
-            
-            // Vérifier si le record contient les champs requis
-            const badgeNumber = record.badgeNumber || record.Badge || record.badge || record['Numéro de badge'];
-            const eventDate = record.eventDate || record.date || record.Date || record['Date évènements'];
-            const eventTime = record.eventTime || record.time || record.Time || record.heure || record.Heure || record['Heure évènements'];
-            
-            // Si certains champs requis sont manquants, les signaler mais continuer
-            if (!badgeNumber) {
-              stats.skippedRecords++;
-              stats.warnings.push(`Ligne ${lines}: Numéro de badge manquant`);
-              return null; // Ignorer cet enregistrement
-            }
-            
-            if (!eventDate) {
-              stats.skippedRecords++;
-              stats.warnings.push(`Ligne ${lines}: Date d'événement manquante`);
-              return null; // Ignorer cet enregistrement
-            }
-            
-            if (!eventTime) {
-              stats.skippedRecords++;
-              stats.warnings.push(`Ligne ${lines}: Heure d'événement manquante`);
-              return null; // Ignorer cet enregistrement
-            }
-            
-            // Nettoyer les données - enlever les champs vides ou non définis
-            Object.keys(record).forEach(key => {
-              if (record[key] === '' || record[key] === undefined || record[key] === null) {
-                delete record[key];
-              }
-            });
-            
-            return record; // Retourner l'enregistrement pour qu'il soit traité
-          } catch (error) {
-            stats.errorRecords++;
-            stats.warnings.push(`Ligne ${lines}: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-            return null; // Ignorer cet enregistrement en cas d'erreur
-          }
-        }
-      });
+  return { success, errors };
+}
 
-      parser.on('readable', function () {
-        let record;
-        while ((record = parser.read())) {
-          try {
-            if (record === null) continue; // Ignorer les enregistrements déjà marqués comme invalides
-            
-            const normalizedRecord = normalizeRecord(record);
-            if (!normalizedRecord) continue; // Ignorer si la normalisation échoue
-            
-            records.push(normalizedRecord);
-            
-            // Mettre à jour les statistiques
-            if (normalizedRecord.isVisitor) {
-              stats.visitors++;
-            } else {
-              stats.employees++;
-            }
-            
-            if (normalizedRecord.direction === 'in') {
-              stats.entriesCount++;
-            } else if (normalizedRecord.direction === 'out') {
-              stats.exitsCount++;
-            }
-            
-            stats.successfullyProcessed++;
-          } catch (error) {
-            console.error('Error processing record:', record, error);
-            stats.errorRecords++;
-            stats.warnings.push(`Erreur de traitement: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-          }
-        }
-      });
+// Fonction pour détecter le délimiteur CSV
+const detectDelimiter = (content: string): string => {
+  const firstLine = content.split('\n')[0];
+  const delimiters = [',', ';', '\t'];
+  const counts = delimiters.map(d => ({
+    delimiter: d,
+    count: (firstLine.match(new RegExp(d, 'g')) || []).length
+  }));
+  return counts.reduce((a, b) => a.count > b.count ? a : b).delimiter;
+};
 
-      parser.on('error', function (err) {
-        console.error('Error parsing CSV:', err);
-        // Ne pas rejeter, mais ajouter aux statistiques et continuer
-        stats.errorRecords++;
-        stats.warnings.push(`Erreur de parsing CSV: ${err.message}`);
-      });
+// Fonction pour valider le format du fichier CSV
+const validateCSVFormat = (content: string, delimiter: string): boolean => {
+  const lines = content.split('\n').filter(line => line.trim());
+  if (lines.length < 2) return false; // Au moins l'en-tête et une ligne de données
 
-      parser.on('end', async function () {
+  const header = lines[0].split(delimiter);
+  const requiredColumns = ['Numéro de badge', 'Badge Number', 'badge_number', 'Date', 'Event Date', 'event_date'];
+  const hasRequiredColumns = requiredColumns.some(col => 
+    header.some(h => h.trim().toLowerCase() === col.toLowerCase())
+  );
+
+  return hasRequiredColumns;
+};
+
+// Fonction principale de traitement optimisée
+export async function processCSVFile(
+  filePath: string,
+  fileContent: string,
+  options: ProcessingOptions = {}
+): Promise<ProcessingStats> {
+  const {
+    batchSize = 100,
+    validateData = true,
+    skipDuplicates = true,
+    maxErrors = 1000
+  } = options;
+
+  const stats: ProcessingStats = {
+    successfullyProcessed: 0,
+    errorRecords: 0,
+    skippedRecords: 0,
+    duplicates: 0,
+    warnings: []
+  };
+
+  // Détecter le délimiteur
+  const delimiter = detectDelimiter(fileContent);
+  console.log(`Detected delimiter: ${delimiter}`);
+
+  // Valider le format du fichier
+  if (!validateCSVFormat(fileContent, delimiter)) {
+    throw new Error('Invalid CSV format: missing required columns');
+  }
+
+  const records: NormalizedRecord[] = [];
+  let currentBatch: NormalizedRecord[] = [];
+
+  return new Promise<ProcessingStats>((resolve, reject) => {
+    const parser = parse({
+      delimiter,
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+      relax_column_count: true,
+      encoding: 'utf-8'
+    });
+
+    parser.on('readable', async function() {
+      let record;
+      while ((record = parser.read()) !== null) {
         try {
-          if (records.length > 0) {
-            // Limiter les warnings à 10 pour éviter une réponse trop volumineuse
-            stats.warnings = stats.warnings.slice(0, 10);
-            if (stats.warnings.length < stats.skippedRecords + stats.errorRecords) {
-              stats.warnings.push(`... et ${stats.skippedRecords + stats.errorRecords - stats.warnings.length} autres avertissements non affichés`);
-            }
-          
-            // Insérer les enregistrements dans la base de données
-            try {
-              const result = await AccessLog.insertMany(records, { ordered: false });
-              console.log(`${result.length} records inserted successfully`);
-            } catch (error: any) {
-              // Gérer les erreurs de duplication MongoDB
-              if (error.code === 11000 && error.writeErrors) {
-                const duplicateCount = error.writeErrors.length;
-                stats.duplicates = duplicateCount;
-                stats.successfullyProcessed -= duplicateCount;
-                console.log(`${duplicateCount} duplicate records found and skipped.`);
-              } else {
-                console.error('Error inserting records:', error);
-                stats.errorRecords += records.length - stats.successfullyProcessed;
-                stats.warnings.push(`Erreur d'insertion en base de données: ${error.message}`);
-              }
-            }
-            
-            // Supprimer le fichier temporaire après traitement
-            try {
-              fs.unlinkSync(filePath);
-            } catch (error) {
-              console.error('Error deleting temporary file:', error);
-            }
-            
-            return resolve(stats);
-          } else {
-            console.log('No valid records to insert');
-            stats.warnings.push('Aucun enregistrement valide à insérer');
-            
-            // Supprimer le fichier temporaire
-            try {
-              fs.unlinkSync(filePath);
-            } catch (error) {
-              console.error('Error deleting temporary file:', error);
-            }
-            
-            return resolve(stats);
+          if (validateData) {
+            validateCSVRecord(record);
           }
-        } catch (error: any) {
-          console.error('Error in CSV processing:', error);
+
+          const normalizedRecord = normalizeRecord(record);
+          currentBatch.push(normalizedRecord);
+
+          if (currentBatch.length >= batchSize) {
+            const { success, errors } = await processBatch(currentBatch, prismaClient);
+            stats.successfullyProcessed += success;
+            stats.errorRecords += errors.length;
+            stats.warnings.push(...errors.map(e => e.error.message));
+            currentBatch = [];
+
+            if (stats.errorRecords >= maxErrors) {
+              parser.end();
+              resolve(stats);
+              return;
+            }
+          }
+        } catch (error) {
           stats.errorRecords++;
-          stats.warnings.push(`Erreur générale: ${error.message}`);
-          return resolve(stats);
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          stats.warnings.push(`Error processing record: ${errorMessage}`);
+          console.error('Error processing record:', error);
         }
-      });
-    } catch (error) {
-      console.error('Error parsing CSV:', error);
+      }
+    });
+
+    parser.on('error', function(err) {
+      console.error('Error parsing CSV:', err);
       stats.errorRecords++;
-      stats.warnings.push(`Erreur de parsing CSV: ${error instanceof Error ? error.message : 'Erreur inconnue'}`);
-      return resolve(stats);
-    }
+      stats.warnings.push(`CSV parsing error: ${err.message}`);
+      reject(err);
+    });
+
+    parser.on('end', async function() {
+      try {
+        if (currentBatch.length > 0) {
+          const { success, errors } = await processBatch(currentBatch, prismaClient);
+          stats.successfullyProcessed += success;
+          stats.errorRecords += errors.length;
+          stats.warnings.push(...errors.map(e => e.error.message));
+        }
+
+        resolve(stats);
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    parser.write(fileContent);
+    parser.end();
   });
+}
+
+interface CSVRow {
+  'Numéro de badge': string;
+  'Date évènements': string;
+  'Heure évènements': string;
+  'Centrale': string;
+  'Lecteur': string;
+  'Nature Evenement': string;
+  'Nom': string;
+  'Prénom': string;
+  'Statut': string;
+  'Groupe': string;
+  'Date de début de validité': string;
+  'Date de création': string;
+}
+
+const parseCSV = (content: string): CSVRow[] => {
+  const lines = content.split('\n');
+  const headers = lines[0].split(';').map(h => h.trim());
+  
+  return lines.slice(1).map(line => {
+    const values = line.split(';').map(v => v.trim());
+    const row: any = {};
+    
+    headers.forEach((header, index) => {
+      row[header] = values[index] || null;
+    });
+    
+    return row as CSVRow;
+  }).filter(row => row['Numéro de badge'] && row['Date évènements'] && row['Nature Evenement']);
+};
+
+const validateRow = (row: CSVRow): boolean => {
+  // Vérifier les champs requis
+  if (!row['Numéro de badge'] || !row['Date évènements'] || !row['Nature Evenement']) {
+    console.warn('Ligne ignorée: champs requis manquants', row);
+    return false;
+  }
+
+  // Extraire la date et l'heure
+  const [datePart, timePart] = row['Date évènements'].split(' ');
+  if (!datePart || !timePart) {
+    console.warn('Ligne ignorée: format de date/heure invalide', row);
+    return false;
+  }
+
+  // Valider le format de la date
+  const dateRegex = /^\d{2}\/\d{2}\/\d{4}$/;
+  if (!dateRegex.test(datePart)) {
+    console.warn('Ligne ignorée: format de date invalide', row);
+    return false;
+  }
+
+  // Valider le format de l'heure
+  const timeRegex = /^\d{2}:\d{2}:\d{2}$/;
+  if (!timeRegex.test(timePart)) {
+    console.warn('Ligne ignorée: format d\'heure invalide', row);
+    return false;
+  }
+
+  // Valider que la date n'est pas dans le futur
+  const [day, month, year] = datePart.split('/');
+  const eventDate = new Date(`${year}-${month}-${day}T${timePart}`);
+  if (eventDate > new Date()) {
+    console.warn('Ligne ignorée: date dans le futur', row);
+    return false;
+  }
+
+  return true;
+};
+
+const mapPersonType = (type: string | undefined): AccessLogsPersonType => {
+  if (!type) return 'employee';
+  
+  const normalizedType = type.toLowerCase().trim();
+  switch (normalizedType) {
+    case 'employee':
+    case 'employé':
+      return 'employee';
+    case 'visitor':
+    case 'visiteur':
+      return 'visitor';
+    default:
+      return 'employee';
+  }
+};
+
+// Fonction pour générer une signature unique d'un enregistrement pour détecter les doublons
+const generateRecordSignature = (row: CSVRow): string => {
+  // Utiliser tous les champs importants pour générer une signature unique
+  // qui identifiera de manière fiable les entrées identiques
+  const [datePart, timePart] = row['Date évènements'].split(' ');
+  
+  // Normaliser les valeurs pour éviter les faux négatifs dans la détection
+  const badge = row['Numéro de badge']?.trim() || '';
+  const terminal = row['Centrale']?.trim() || '';
+  const reader = row['Lecteur']?.trim() || '';
+  const eventType = row['Nature Evenement']?.trim() || '';
+  const lastName = row['Nom']?.trim() || '';
+  const firstName = row['Prénom']?.trim() || '';
+  
+  // Construire une signature exhaustive qui couvre tous les champs critiques
+  return `${badge}|${datePart}|${timePart}|${terminal}|${reader}|${eventType}|${lastName}|${firstName}`;
+};
+
+export async function POST(request: Request) {
+  console.log('CSV processing API called');
+  
+  try {
+    // Extraire le corps de la requête
+    const body = await request.json();
+    const { filePath, fileContent } = body;
+    
+    if (!filePath || !fileContent) {
+      return Response.json({ error: 'File path and content are required' }, { status: 400 });
+    }
+    
+    console.log(`Processing CSV file: ${filePath}`);
+    
+    // Traiter le fichier CSV
+    const stats = await processCSVFile(filePath, fileContent, {
+      batchSize: 100,
+      validateData: true,
+      skipDuplicates: true
+    });
+    
+    // Appliquer les hooks de post-traitement
+    console.log('Applying post-import hooks...');
+    const hooksResult = await afterImport();
+    
+    // Enregistrer l'activité d'importation
+    await logActivity({
+      action: 'CSV_IMPORT',
+      details: JSON.stringify({
+        filePath,
+        stats,
+        hooksResult
+      }),
+      ipAddress: 'API'
+    });
+    
+    return Response.json({
+      success: true,
+      message: 'CSV processing completed successfully',
+      stats,
+      postProcessing: hooksResult
+    });
+    
+  } catch (error) {
+    console.error('Error processing CSV:', error);
+    
+    return Response.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred'
+    }, { status: 500 });
+  }
 } 
