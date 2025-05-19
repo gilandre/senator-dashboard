@@ -41,4 +41,8 @@ next-env.d.ts
 
 # logs
 /logs
-*.log 
+*.log
+
+# Prisma generated
+prisma/generated/client/*
+!prisma/generated/client/.gitkeep 
