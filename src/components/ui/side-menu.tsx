@@ -105,45 +105,47 @@ export default function SideMenu() {
           href: "/import",
           icon: Download,
         },
-        {
-          name: "Exporter",
-          href: "/export",
-          icon: Upload,
-        },
+        // Temporairement désactivé
+        // {
+        //   name: "Exporter",
+        //   href: "/export",
+        //   icon: Upload,
+        // },
       ],
     },
     {
       title: "Accès",
       items: [
-        {
-          name: "Contrôle d'accès",
-          href: "/access",
-          icon: DoorOpen,
-        },
+        // Temporairement désactivés
+        // {
+        //   name: "Contrôle d'accès",
+        //   href: "/access",
+        //   icon: DoorOpen,
+        // },
         {
           name: "Anomalies",
           href: "/anomalies",
           icon: AlertTriangle,
         },
-        {
-          name: "Historique d'accès",
-          href: "/access-history",
-          icon: Clock,
-        },
+        // {
+        //   name: "Historique d'accès",
+        //   href: "/access-history",
+        //   icon: Clock,
+        // },
       ],
     },
     {
       title: "Collaborateurs",
       items: [
         {
-          name: "Employés",
-          href: "/employees",
-          icon: Users,
-        },
-        {
           name: "Présences",
           href: "/attendance",
           icon: CalendarCheck,
+        },
+        {
+          name: "Employés",
+          href: "/employees",
+          icon: Users,
         },
         {
           name: "Visiteurs",

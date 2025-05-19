@@ -1,0 +1,695 @@
+import { NextRequest, NextResponse } from 'next/server';
+import puppeteer from 'puppeteer';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import handlebars from 'handlebars';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+
+// Define route segment config with proper format
+export const dynamic = 'force-dynamic';
+export const maxDuration = 60; // Increased timeout for PDF generation
+
+// Register helper functions for Handlebars templates
+handlebars.registerHelper('formatDate', function(dateString) {
+  if (!dateString) return '';
+  return format(new Date(dateString), 'dd MMMM yyyy', { locale: fr });
+});
+
+handlebars.registerHelper('formatCurrentDate', function() {
+  return format(new Date(), 'dd MMMM yyyy à HH:mm', { locale: fr });
+});
+
+handlebars.registerHelper('currentYear', function() {
+  return new Date().getFullYear();
+});
+
+handlebars.registerHelper('formatNumber', function(value) {
+  if (value === undefined || value === null) return '0';
+  return parseFloat(value).toFixed(1);
+});
+
+handlebars.registerHelper('calculatePresenceRate', function(avgEmployeePerDay, totalEmployees) {
+  if (!avgEmployeePerDay || !totalEmployees || totalEmployees === 0) return '0';
+  return ((avgEmployeePerDay * 100) / totalEmployees).toFixed(1);
+});
+
+handlebars.registerHelper('formatDuration', function(durationMinutes) {
+  if (!durationMinutes) return '0h';
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  if (minutes === 0) {
+    return `${hours}h`;
+  }
+  return `${hours}h${minutes.toString().padStart(2, '0')}`;
+});
+
+handlebars.registerHelper('divide', function(a, b) {
+  return a / b;
+});
+
+handlebars.registerHelper('multiply', function(a, b) {
+  return a * b;
+});
+
+handlebars.registerHelper('subtract', function(a, b) {
+  return a - b;
+});
+
+handlebars.registerHelper('lessThan', function(a, b) {
+  return a < b;
+});
+
+handlebars.registerHelper('greaterThan', function(a, b) {
+  return a > b;
+});
+
+handlebars.registerHelper('greaterThanOrEqual', function(a, b) {
+  return a >= b;
+});
+
+handlebars.registerHelper('and', function(a, b) {
+  return a && b;
+});
+
+// Type interface for the Handlebars context
+interface HandlebarsContext {
+  data: {
+    daily?: Array<{ count?: number; duration?: number }>;
+    [key: string]: any;
+  };
+  [key: string]: any;
+}
+
+handlebars.registerHelper('calculateAverageHoursPerEmployee', function(this: HandlebarsContext) {
+  const dailyData = this.data?.daily || [];
+  if (dailyData.length === 0) return "0 h";
+  
+  let totalEmployeeHours = 0;
+  let totalEmployeeCount = 0;
+  
+  dailyData.forEach(day => {
+    if (day?.count && day?.duration) {
+      totalEmployeeHours += day.duration;
+      totalEmployeeCount += day.count;
+    }
+  });
+  
+  if (totalEmployeeCount === 0) return "0 h";
+  return ((totalEmployeeHours / 60) / totalEmployeeCount).toFixed(1) + " h";
+});
+
+// Generate recommendations based on data
+function generateRecommendations(data: any): string[] {
+  const recommendations: string[] = [];
+  
+  // Vérifier le taux de présence moyen
+  if (data?.summary) {
+    const presenceRate = data.summary.avgEmployeePerDay * 100 / Math.max(1, data.summary.totalEmployees);
+    if (presenceRate < 70) {
+      recommendations.push("Le taux de présence moyen est inférieur à 70%. Envisagez une analyse des facteurs d'absences et des mesures pour améliorer la présence.");
+    }
+  }
+  
+  // Vérifier les tendances
+  if (data?.daily && data.daily.length >= 2) {
+    const midpoint = Math.floor(data.daily.length / 2);
+    const firstHalf = data.daily.slice(0, midpoint);
+    const secondHalf = data.daily.slice(midpoint);
+    
+    const firstHalfAvg = firstHalf.reduce((sum, day) => sum + (day?.duration || 0), 0) / firstHalf.length;
+    const secondHalfAvg = secondHalf.reduce((sum, day) => sum + (day?.duration || 0), 0) / secondHalf.length;
+    
+    const percentChange = ((secondHalfAvg - firstHalfAvg) / firstHalfAvg) * 100;
+    
+    if (percentChange < -5) {
+      recommendations.push(`Une tendance à la baisse du temps de présence a été détectée (${percentChange.toFixed(1)}%). Il serait utile d'identifier les causes potentielles de cette baisse.`);
+    }
+  }
+  
+  // Vérifier les données par groupe
+  if (data?.employeeStats) {
+    const lowPresenceGroups = data.employeeStats.filter(stat => stat.avgDuration / 60 < 6);
+    if (lowPresenceGroups.length > 0) {
+      recommendations.push(`${lowPresenceGroups.length} groupe(s) présentent un temps moyen de présence inférieur à 6h. Une attention particulière devrait être portée à: ${lowPresenceGroups.map(g => g.name).join(', ')}.`);
+    }
+  }
+  
+  // Recommandation générale si pas de problèmes spécifiques
+  if (recommendations.length === 0) {
+    recommendations.push("Les indicateurs de présence sont dans les normes attendues. Continuez le suivi régulier pour maintenir cette performance.");
+  }
+  
+  return recommendations;
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    // Récupérer les données du rapport depuis la requête
+    const { data, dateRange, options } = await req.json();
+    
+    // Convertir les chaînes de date en objets Date pour les dateRange
+    const formattedDateRange = {
+      from: dateRange?.from ? new Date(dateRange.from) : undefined,
+      to: dateRange?.to ? new Date(dateRange.to) : undefined
+    };
+    
+    // Générer les recommandations
+    const recommendations = generateRecommendations(data);
+    
+    // Au lieu de renderToString, nous utilisons handlebars pour générer le HTML
+    // Charger le template HTML
+    const templatePath = path.resolve(process.cwd(), 'src/templates/presence-report-template.html');
+    const templateContent = fs.existsSync(templatePath) 
+      ? fs.readFileSync(templatePath, 'utf8')
+      : generateDefaultTemplate(); // Fonction de fallback si le template n'existe pas
+    
+    // Compiler le template
+    const template = handlebars.compile(templateContent);
+    
+    // Préparer les données de contexte pour le template
+    const context = {
+      data,
+      dateRange: formattedDateRange,
+      options: options || {
+        includeCharts: true,
+        includeDetails: true,
+        includeRecommendations: true
+      },
+      recommendations,
+      generatedAt: new Date().toISOString()
+    };
+    
+    // Générer le HTML avec les données de contexte
+    const html = template(context);
+    
+    // Lancer un navigateur headless pour la conversion
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
+    
+    try {
+      const page = await browser.newPage();
+      
+      // Configurer la page pour le format A4
+      await page.setViewport({
+        width: 1240,
+        height: 1754,
+        deviceScaleFactor: 1.5,
+      });
+      
+      // Injecter le HTML et attendre le chargement complet
+      await page.setContent(html, { 
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
+      
+      // Attendre que toutes les polices soient chargées
+      await page.evaluateHandle('document.fonts.ready');
+      
+      // Étape 1: Si des graphiques sont nécessaires, capture des données de présence et génère une image
+      if (context.options.includeCharts && data?.daily && data.daily.length > 0) {
+        // Injecter Chart.js dans la page
+        await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/chart.js' });
+        
+        // Générer un graphique basé sur les données
+        const chartImgBase64 = await page.evaluate((chartData) => {
+          try {
+            // Créer un canvas pour le graphique
+            const container = document.querySelector('.chart-placeholder');
+            if (!container) {
+              const chartSection = document.createElement('div');
+              chartSection.className = 'section';
+              
+              const chartTitle = document.createElement('div');
+              chartTitle.className = 'section-title';
+              chartTitle.textContent = 'Distribution du temps par jour';
+              
+              const chartContainer = document.createElement('div');
+              chartContainer.className = 'chart-container';
+              chartContainer.style.height = '300px';
+              
+              const canvas = document.createElement('canvas');
+              canvas.id = 'presenceChart';
+              chartContainer.appendChild(canvas);
+              
+              chartSection.appendChild(chartTitle);
+              chartSection.appendChild(chartContainer);
+              
+              // Insérer après la première section
+              const firstSection = document.querySelector('.section');
+              if (firstSection && firstSection.nextSibling && firstSection.parentNode) {
+                firstSection.parentNode.insertBefore(chartSection, firstSection.nextSibling);
+              } else if (firstSection && firstSection.parentNode) {
+                firstSection.parentNode.appendChild(chartSection);
+              } else {
+                document.body.appendChild(chartSection);
+              }
+              
+              // Créer le graphique
+              const ctx = canvas.getContext('2d');
+              
+              // Formater les données pour le graphique
+              const labels = chartData.map(day => day.date ? new Date(day.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }) : '');
+              const hoursData = chartData.map(day => (day.duration || 0) / 60);
+              const employeeData = chartData.map(day => day.count || 0);
+              
+              // Chart.js est disponible dans le contexte d'exécution grâce à addScriptTag
+              // @ts-ignore
+              const chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                  labels: labels,
+                  datasets: [
+                    {
+                      label: 'Heures de présence',
+                      data: hoursData,
+                      backgroundColor: '#007B65',
+                      yAxisID: 'y',
+                      order: 1
+                    },
+                    {
+                      label: "Nombre d'employés",
+                      data: employeeData,
+                      backgroundColor: '#3B82F6',
+                      yAxisID: 'y1',
+                      type: 'line',
+                      order: 0
+                    }
+                  ]
+                },
+                options: {
+                  responsive: true,
+                  interaction: {
+                    mode: 'index',
+                    intersect: false,
+                  },
+                  scales: {
+                    y: {
+                      type: 'linear',
+                      display: true,
+                      position: 'left',
+                      title: {
+                        display: true,
+                        text: 'Heures'
+                      }
+                    },
+                    y1: {
+                      type: 'linear',
+                      display: true,
+                      position: 'right',
+                      grid: {
+                        drawOnChartArea: false,
+                      },
+                      title: {
+                        display: true,
+                        text: 'Employés'
+                      }
+                    }
+                  }
+                }
+              });
+              
+              // Laisser le temps au graphique de se rendre
+              return new Promise(resolve => {
+                setTimeout(() => {
+                  resolve(canvas.toDataURL('image/png'));
+                }, 500);
+              });
+            }
+            return null;
+          } catch (error) {
+            console.error('Erreur de génération du graphique:', error);
+            return null;
+          }
+        }, data.daily);
+        
+        // Si un graphique a été créé, l'insérer dans le document
+        if (chartImgBase64) {
+          await page.evaluate((imgData) => {
+            const chartContainer = document.querySelector('.chart-container');
+            if (chartContainer) {
+              const img = document.createElement('img');
+              img.src = imgData;
+              img.style.width = '100%';
+              img.style.height = 'auto';
+              
+              // Remplacer le canvas par l'image (pour éviter les problèmes de rendu)
+              chartContainer.innerHTML = '';
+              chartContainer.appendChild(img);
+            }
+          }, chartImgBase64 as string);
+        }
+      }
+      
+      // Optimiser la mise en page pour réduire les espaces
+      await page.evaluate(() => {
+        // Réduire les marges entre sections
+        const style = document.createElement('style');
+        style.textContent = `
+          .section { margin-bottom: 15px; }
+          .page-break { margin: 0; padding: 0; }
+          .grid { gap: 10px; }
+        `;
+        document.head.appendChild(style);
+        
+        // Supprimer les sauts de page inutiles
+        const pageBreaks = document.querySelectorAll('.page-break');
+        pageBreaks.forEach(pb => {
+          // Vérifier si le saut de page est entre deux sections sans contenu significatif
+          const next = pb.nextElementSibling;
+          const prev = pb.previousElementSibling;
+          
+          if (next && prev) {
+            const prevHeight = prev.getBoundingClientRect().height;
+            const nextHeight = next.getBoundingClientRect().height;
+            
+            // Si la section précédente est presque vide ou très petite, supprimer le saut de page
+            if (prevHeight < 100) {
+              pb.remove();
+            }
+          }
+        });
+      });
+
+      // Ajouter une page de garde au début du document
+      const dateFrom = formattedDateRange.from 
+        ? format(formattedDateRange.from, 'dd MMMM yyyy', { locale: fr }) 
+        : '';
+      const dateTo = formattedDateRange.to 
+        ? format(formattedDateRange.to, 'dd MMMM yyyy', { locale: fr }) 
+        : '';
+      const totalEmployees = data?.summary?.totalEmployees || 'N/A';
+      const totalDays = data?.daily?.length || 'N/A';
+      const currentYear = new Date().getFullYear();
+      const currentDate = format(new Date(), 'dd MMMM yyyy à HH:mm', { locale: fr });
+
+      // Create params object that will be passed to evaluate
+      const evaluateParams = {
+        dateFrom,
+        dateTo,
+        totalEmployees,
+        totalDays,
+        currentYear,
+        currentDate
+      };
+
+      await page.evaluate((params: any) => {
+        // Créer la page de garde
+        const coverPage = document.createElement('div');
+        coverPage.style.position = 'relative';
+        coverPage.style.height = '297mm';
+        coverPage.style.width = '210mm';
+        coverPage.style.padding = '0';
+        coverPage.style.margin = '0';
+        coverPage.style.pageBreakAfter = 'always';
+        coverPage.style.backgroundColor = '#f9f9f9';
+        
+        // Fond avec motif subtil
+        coverPage.innerHTML = `
+          <div style="position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2MCIgaGVpZ2h0PSI2MCIgdmlld0JveD0iMCAwIDYwIDYwIj48ZyBmaWxsPSJub25lIj48cGF0aCBkPSJNMzAgNWM4LjI4NCAwIDE1IDYuNzE2IDE1IDE1IDAgOC4yODQtNi43MTYgMTUtMTUgMTUtOC4yODQgMC0xNS02LjcxNi0xNS0xNUM1IDExLjcxNiAxMS43MTYgNSAzMCA1em0wIDBjOC4yODQgMCAxNSA2LjcxNiAxNSAxNSAwIDguMjg0LTYuNzE2IDE1LTE1IDE1LTguMjg0IDAtMTUtNi43MTYtMTUtMTVDNSAxMS43MTYgMTEuNzE2IDUgMzAgNXptMCAzMGM4LjI4NCAwIDE1IDYuNzE2IDE1IDE1IDAgOC4yODQtNi43MTYgMTUtMTUgMTUtOC4yODQgMC0xNS02LjcxNi0xNS0xNUM1IDExLjcxNiAxMS43MTYgNSAzMCA1eiIgc3Ryb2tlPSIjZTBlMGUwIiBzdHJva2Utb3BhY2l0eT0iMC4yIiBzdHJva2Utd2lkdGg9IjIiLz48cGF0aCBkPSJNNSA1aDUwdjUwSDV6IiBzdHJva2U9IiMwMDdiNjUiIHN0cm9rZS1vcGFjaXR5PSIwLjA1IiBzdHJva2Utd2lkdGg9IjIiLz48L2c+PC9zdmc+');
+          opacity: 0.1;
+          z-index: 1;"></div>
+        
+        <div style="position: absolute; top: 50mm; left: 0; right: 0; text-align: center; z-index: 10;">
+          <img src="data:image/png;base64,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" width="96" height="96" style="margin-bottom: 20px;" />
+          <h1 style="font-size: 32px; margin: 0 0 10px 0; font-weight: 600; color: #007B65;">Rapport de Temps de Présence</h1>
+          <p style="font-size: 18px; margin: 10px 0; color: #666; font-weight: 300;">Senator InvesTech</p>
+          
+          <div style="width: 100px; height: 4px; background-color: #007B65; margin: 30px auto;"></div>
+          
+          <div style="max-width: 400px; margin: 0 auto; text-align: left; padding: 20px; background-color: rgba(255,255,255,0.8); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Période:</strong> ${params.dateFrom} au ${params.dateTo}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Généré le:</strong> ${params.currentDate}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Nombre d'employés:</strong> ${params.totalEmployees}</p>
+            <p style="margin: 5px 0; font-size: 14px;"><strong>Nombre total de jours:</strong> ${params.totalDays}</p>
+          </div>
+        </div>
+        
+        <div style="position: absolute; bottom: 40mm; left: 0; right: 0; text-align: center;">
+          <p style="font-size: 11px; color: #999;">Senator InvesTech © ${params.currentYear} - Document confidentiel</p>
+        </div>
+      `;
+      
+      // Insérer la page de garde au début du document
+      document.body.insertBefore(coverPage, document.body.firstChild);
+    }, evaluateParams);
+
+    // Ajuster les marges pour éviter les conflits visuels (supprimer l'en-tête et le pied de page)
+    const pdfBuffer = await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '10mm', right: '10mm', bottom: '10mm', left: '10mm' },
+      displayHeaderFooter: false, // Supprimer l'en-tête et le pied de page pour éviter les conflits
+      preferCSSPageSize: true,
+      scale: 0.98,
+      timeout: 60000
+    });
+      
+    await browser.close();
+    
+    // Renvoyer le PDF généré
+    return new NextResponse(pdfBuffer, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename="rapport_presence_${new Date().toISOString().split('T')[0]}.pdf"`
+      }
+    });
+  } catch (error) {
+    // S'assurer que le navigateur est fermé en cas d'erreur
+    if (browser) {
+      await browser.close();
+    }
+    console.error('Erreur lors de la génération du PDF:', error);
+    return NextResponse.json({ error: 'Erreur lors de la génération du PDF' }, { status: 500 });
+  }
+}
+
+// Template de base si le fichier template n'existe pas
+function generateDefaultTemplate(): string {
+  return `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Rapport de Temps de Présence</title>
+        <style>
+          @page {
+            size: A4;
+            margin: 0;
+          }
+          body {
+            margin: 0;
+            padding: 20mm;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #333;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+          }
+          .title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007B65;
+            margin-bottom: 8px;
+          }
+          .subtitle {
+            font-size: 16px;
+            color: #666;
+            margin-top: 5px;
+          }
+          .section {
+            margin-bottom: 25px;
+            page-break-inside: avoid;
+          }
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 5px;
+            color: #007B65;
+          }
+          .grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+          }
+          .card {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+          }
+          .card-title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #555;
+          }
+          .card-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #007B65;
+          }
+          .card-description {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 20px;
+          }
+          .table-header {
+            background-color: #f5f5f5;
+          }
+          .table-header-cell {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            font-weight: bold;
+          }
+          .table-cell {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+          }
+          .page-break {
+            page-break-before: always;
+            height: 1px;
+          }
+          .footer {
+            margin-top: 30px;
+            font-size: 10px;
+            color: #999;
+            text-align: center;
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="title">Rapport de Temps de Présence</div>
+          <div class="subtitle">
+            {{#if dateRange.from}}
+              Période du {{formatDate dateRange.from}} au {{formatDate dateRange.to}}
+            {{else}}
+              Période complète
+            {{/if}}
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">Vue d'ensemble</div>
+          <div class="grid">
+            <!-- Carte 1: Taux de présence moyen -->
+            <div class="card">
+              <div class="card-title">Taux de présence moyen</div>
+              <div class="card-value">
+                {{#if data.summary}}
+                  {{calculatePresenceRate data.summary.avgEmployeePerDay data.summary.totalEmployees}}%
+                {{else}}
+                  0%
+                {{/if}}
+              </div>
+              <div class="card-description">
+                {{#if data.summary}}
+                  {{data.summary.avgEmployeePerDay}} employés présents en moyenne sur {{data.summary.totalEmployees}} total
+                {{else}}
+                  Aucune donnée disponible
+                {{/if}}
+              </div>
+            </div>
+
+            <!-- Carte 2: Temps total de présence -->
+            <div class="card">
+              <div class="card-title">Temps total de présence</div>
+              <div class="card-value">
+                {{#if data.summary.totalHours}}
+                  {{formatNumber data.summary.totalHours}} h
+                {{else}}
+                  0 h
+                {{/if}}
+              </div>
+              <div class="card-description">
+                Sur une période de {{data.daily.length}} jours
+              </div>
+            </div>
+
+            <!-- Carte 3: Temps moyen par employé -->
+            <div class="card">
+              <div class="card-title">Temps moyen par employé</div>
+              <div class="card-value">
+                {{calculateAverageHoursPerEmployee}}
+              </div>
+              <div class="card-description">
+                Moyenne journalière par personne
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {{#if options.includeDetails}}
+        {{#if data.detailedLogs}}
+        {{#if data.detailedLogs.length}}
+        <div class="page-break"></div>
+        <div class="section">
+          <div class="section-title">Détails des présences</div>
+          <table class="table">
+            <thead class="table-header">
+              <tr>
+                <th class="table-header-cell">Date</th>
+                <th class="table-header-cell">Employé</th>
+                <th class="table-header-cell">Badge</th>
+                <th class="table-header-cell">Groupe</th>
+                <th class="table-header-cell">Entrée</th>
+                <th class="table-header-cell">Sortie</th>
+                <th class="table-header-cell">Durée (h)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{#each data.detailedLogs}}
+              {{#if @index < 20}}
+              <tr>
+                <td class="table-cell">{{formatDate this.date}}</td>
+                <td class="table-cell">{{this.name}}</td>
+                <td class="table-cell">{{this.badge_number}}</td>
+                <td class="table-cell">{{this.groupe}}</td>
+                <td class="table-cell">{{this.first_badge}}</td>
+                <td class="table-cell">{{this.last_badge}}</td>
+                <td class="table-cell">{{formatDuration this.duration}}</td>
+              </tr>
+              {{/if}}
+              {{/each}}
+            </tbody>
+          </table>
+        </div>
+        {{/if}}
+        {{/if}}
+        {{/if}}
+
+        <div class="footer">
+          <div>
+            Rapport généré le {{formatCurrentDate}}
+          </div>
+          <div>
+            Senator InvesTech © {{currentYear}} - Tous droits réservés
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+}
+
+// Configuration pour les requêtes volumineuses
+// Note: Cette config n'est plus utilisée de cette façon dans App Router
+// Les limites sont maintenant gérées par la config route segment 
+}

@@ -400,91 +400,41 @@ export function EmployeeTimeTracker() {
   };
 
   // Export functions
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (!filteredData.length || !dateRange.from || !dateRange.to) return;
 
     setExporting(true);
     try {
-      const exportData = filteredData.map(record => {
-        // Calculer le temps net (avec déduction des pauses)
-        let netHours = record.totalHours;
-        let formattedNetHours = record.formattedTotalHours;
-        
-        if (record.arrivalTime && record.departureTime) {
-          try {
-            // Convertir les heures en minutes
-            const [arrivalHours, arrivalMinutes] = record.arrivalTime.split(':').map(Number);
-            const [departureHours, departureMinutes] = record.departureTime.split(':').map(Number);
-            
-            const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
-            const departureTotalMinutes = departureHours * 60 + departureMinutes;
-            
-            // Calculer la différence en minutes en déduisant uniquement la pause déjeuner
-            const totalMinutes = departureTotalMinutes - arrivalTotalMinutes;
-            const lunchMinutes = record.lunchMinutes || 0;
-            
-            // Calculer les heures nettes
-            const netMinutes = totalMinutes - lunchMinutes;
-            
-            // Convertir en heures et minutes formatées
-            const hours = Math.floor(netMinutes / 60);
-            const minutes = Math.floor(netMinutes % 60);
-            formattedNetHours = `${hours}h${minutes.toString().padStart(2, '0')}`;
-            
-            // Heures décimales pour le calcul
-            netHours = parseFloat((netMinutes / 60).toFixed(2));
-          } catch (error) {
-            console.error('Erreur de calcul des heures nettes pour l\'export:', error);
+      const response = await axios.post('/api/export/csv', {
+        data: {
+          daily: filteredData.map(record => ({
+            date: record.date,
+            count: 1,
+            duration: record.totalHours * 60, // Convertir en minutes
+            breakTimeDeducted: record.lunchMinutes || 0
+          })),
+          summary: {
+            totalEmployees: 1,
+            avgEmployeePerDay: 1,
+            totalHours: filteredData.reduce((sum, record) => sum + (record.totalHours || 0), 0)
           }
+        },
+        options: {
+          netStatistics: true
         }
-        
-        return {
-          Date: format(new Date(record.date), 'dd/MM/yyyy'),
-          Jour: format(new Date(record.date), 'EEEE', { locale: fr }),
-          Badge: record.badgeNumber,
-          Nom: record.lastName,
-          Prénom: record.firstName,
-          Arrivée: record.arrivalTime || 'N/A',
-          Départ: record.departureTime || 'N/A',
-          'Pause Déjeuner (min)': record.lunchMinutes || 0,
-          'Heures Brutes': record.formattedTotalHours,
-          'Heures Nettes': formattedNetHours,
-          'Lecteur Entrée': record.arrivalReader || 'N/A',
-          'Lecteur Sortie': record.departureReader || 'N/A',
-          Statut: record.status || 'N/A',
-          'Type de jour': record.isHoliday 
-            ? `Férié ${record.holidayName ? `(${record.holidayName})` : ''}` 
-            : record.isWeekend 
-              ? 'Weekend' 
-              : record.isHalfDay 
-                ? `Demi-journée ${record.halfDayType === 'morning' ? '(Matin)' : '(Après-midi)'}` 
-                : record.isContinuousDay 
-                  ? 'Continue' 
-                  : 'Normal'
-        };
+      }, {
+        responseType: 'blob'
       });
 
-      const headers = Object.keys(exportData[0]).join(',');
-      const csvData = exportData.map(row => 
-        Object.values(row).map(value => 
-          typeof value === 'string' && value.includes(',') ? `"${value}"` : value
-        ).join(',')
-      );
-
-      const csvContent = [headers, ...csvData].join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
-      
       const dateStr = `${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`;
-      const fileName = `export_presence_${dateStr}.csv`;
-      
-      // Avoid using navigator.msSaveBlob - not standard anymore
-      const url = URL.createObjectURL(blob);
       link.href = url;
-      link.download = fileName;
+      link.download = `export_presence_${dateStr}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting to CSV:', error);
     } finally {
@@ -497,111 +447,81 @@ export function EmployeeTimeTracker() {
 
     setExporting(true);
     try {
-      const exportData = filteredData.map(record => {
-        // Calculer les heures brutes (sans déduction des pauses)
-        let grossHours = record.totalHours;
-        let formattedGrossHours = record.formattedTotalHours;
+      // Calculer le nombre d'employés uniques
+      const uniqueEmployees = new Set(filteredData.map(record => record.badgeNumber)).size;
+      
+      // Calculer le nombre de jours uniques
+      const uniqueDays = new Set(filteredData.map(record => record.date)).size;
+      
+      // Calculer les statistiques par jour
+      const dailyStats = filteredData.reduce((acc, record) => {
+        const date = record.date;
+        if (!acc[date]) {
+          acc[date] = {
+            count: 0,
+            duration: 0,
+            breakTimeDeducted: 0
+          };
+        }
         
-        // Calculer le temps net (avec déduction des pauses)
-        let netHours = record.totalHours;
-        let formattedNetHours = record.formattedTotalHours;
-        
+        // Calculer la durée nette (avec déduction des pauses)
+        let netDuration = record.totalHours * 60; // Convertir en minutes
         if (record.arrivalTime && record.departureTime) {
           try {
-            // Convertir les heures en minutes
             const [arrivalHours, arrivalMinutes] = record.arrivalTime.split(':').map(Number);
             const [departureHours, departureMinutes] = record.departureTime.split(':').map(Number);
             
             const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
             const departureTotalMinutes = departureHours * 60 + departureMinutes;
             
-            // Calculer la différence en minutes pour les heures brutes
+            // Calculer la différence en minutes
             let totalMinutes = departureTotalMinutes - arrivalTotalMinutes;
             
-            // Gérer le cas des journées continues (passage minuit)
+            // Gérer le cas des journées continues
             if (totalMinutes < 0 && record.isContinuousDay) {
               totalMinutes = (24 * 60 - arrivalTotalMinutes) + departureTotalMinutes;
             }
             
-            // Calculer les heures brutes (sans déduction des pauses)
-            const grossHoursValue = Math.floor(totalMinutes / 60);
-            const grossMinutesValue = Math.floor(totalMinutes % 60);
-            formattedGrossHours = `${grossHoursValue}h${grossMinutesValue.toString().padStart(2, '0')}`;
-            
-            // Heures brutes décimales
-            grossHours = parseFloat((totalMinutes / 60).toFixed(2));
-            
-            // Pour les heures nettes, déduire la pause déjeuner
+            // Déduire la pause déjeuner
             const lunchMinutes = record.lunchMinutes || 0;
-            const netMinutes = totalMinutes - lunchMinutes;
-            
-            // Convertir en heures et minutes formatées pour le net
-            const netHoursValue = Math.floor(netMinutes / 60);
-            const netMinutesValue = Math.floor(netMinutes % 60);
-            formattedNetHours = `${netHoursValue}h${netMinutesValue.toString().padStart(2, '0')}`;
-            
-            // Heures nettes décimales
-            netHours = parseFloat((netMinutes / 60).toFixed(2));
+            netDuration = totalMinutes - lunchMinutes;
           } catch (error) {
-            console.error('Erreur de calcul des heures pour l\'export:', error);
+            console.error('Erreur de calcul des heures nettes pour l\'export:', error);
           }
         }
         
-        // Déterminer le statut correct en fonction des informations disponibles
-        let status = 'N/A';
+        acc[date].count++;
+        acc[date].duration += netDuration;
+        acc[date].breakTimeDeducted += (record.lunchMinutes || 0);
         
-        if (record.status) {
-          // Utiliser le statut existant s'il est disponible
-          status = record.status;
-        } else if (record.isHoliday) {
-          status = 'Férié';
-        } else if (record.isWeekend) {
-          status = 'Weekend';
-        } else if (record.isHalfDay) {
-          status = record.halfDayType === 'morning' ? 'Demi-journée (Matin)' : 'Demi-journée (Après-midi)';
-        } else if (record.isContinuousDay) {
-          status = 'Journée continue';
-        } else if (record.arrivalTime && record.departureTime) {
-          status = 'Présent';
-        } else if (record.arrivalTime && !record.departureTime) {
-          status = 'Entrée sans sortie';
-        } else if (!record.arrivalTime && record.departureTime) {
-          status = 'Sortie sans entrée';
-        }
-        
-        return {
-          date: format(new Date(record.date), 'dd/MM/yyyy'),
-          weekday: format(new Date(record.date), 'EEEE', { locale: fr }),
-          badgeNumber: record.badgeNumber,
-          lastName: record.lastName,
-          firstName: record.firstName,
-          arrivalTime: record.arrivalTime || 'N/A',
-          departureTime: record.departureTime || 'N/A',
-          lunchBreakMinutes: record.lunchMinutes || 0,
-          totalHoursGross: formattedGrossHours !== 'N/A' ? formattedGrossHours : 'N/A',
-          totalHoursNet: formattedNetHours !== 'N/A' ? formattedNetHours : 'N/A',
-          arrivalReader: record.arrivalReader || 'N/A',
-          departureReader: record.departureReader || 'N/A',
-          reader: record.reader || 'N/A',
-          status: status,
-          dayType: record.isHoliday 
-            ? `Férié ${record.holidayName ? `(${record.holidayName})` : ''}` 
-            : record.isWeekend 
-              ? 'Weekend' 
-              : record.isHalfDay 
-                ? `Demi-journée ${record.halfDayType === 'morning' ? '(Matin)' : '(Après-midi)'}` 
-                : record.isContinuousDay 
-                  ? 'Continue' 
-                  : 'Normal'
-        };
-      });
-
-      const dateStr = `${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`;
-      const fileName = `export_presence_${dateStr}`;
+        return acc;
+      }, {} as { [key: string]: { count: number; duration: number; breakTimeDeducted: number } });
+      
+      // Convertir les statistiques quotidiennes en tableau
+      const dailyArray = Object.entries(dailyStats).map(([date, stats]) => ({
+        date,
+        count: stats.count,
+        duration: stats.duration,
+        breakTimeDeducted: stats.breakTimeDeducted
+      }));
+      
+      // Calculer les totaux
+      const totalHours = dailyArray.reduce((sum, day) => sum + (day.duration / 60), 0);
+      const avgEmployeesPerDay = dailyArray.reduce((sum, day) => sum + day.count, 0) / uniqueDays;
       
       const response = await axios.post('/api/export/excel', {
-        data: exportData,
-        filename: fileName,
+        data: {
+          daily: dailyArray,
+          summary: {
+            totalEmployees: uniqueEmployees,
+            avgEmployeePerDay: parseFloat(avgEmployeesPerDay.toFixed(2)),
+            totalHours: parseFloat(totalHours.toFixed(2))
+          }
+        },
+        options: {
+          netStatistics: true
+        },
+        filename: `export_presence_${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`,
         sheetName: 'Données de présence',
         title: `Rapport de présence du ${format(dateRange.from, 'dd/MM/yyyy')} au ${format(dateRange.to, 'dd/MM/yyyy')}`
       }, {
@@ -610,12 +530,13 @@ export function EmployeeTimeTracker() {
 
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
+      const dateStr = `${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`;
       link.href = url;
-      link.setAttribute('download', `${fileName}.xlsx`);
+      link.download = `export_presence_${dateStr}.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error('Error exporting to Excel:', error);
     } finally {
@@ -988,9 +909,12 @@ export function EmployeeTimeTracker() {
                     const isContinuousDay = record.isContinuousDay;
                     const isHalfDay = record.isHalfDay;
                     
+                    // Créer une clé unique en combinant plusieurs champs
+                    const uniqueKey = `${record._id}_${record.date}_${record.badgeNumber}`;
+                    
                     return (
                       <TableRow 
-                        key={record._id} 
+                        key={uniqueKey}
                         className={cn(
                           "cursor-pointer transition-colors duration-200",
                           "hover:bg-blue-50",
@@ -1183,32 +1107,36 @@ export function EmployeeTimeTracker() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {formatEventsForDisplay(detailRecord.events).map((event, index) => (
-                                <TableRow key={event._id || index} className="hover:bg-blue-50/50">
-                                  <TableCell className={cn(
-                                    event.displayType === 'IN' ? "text-green-700 font-medium" : 
-                                    event.displayType === 'OUT' ? "text-red-700 font-medium" : "text-gray-700 font-medium"
-                                  )}>
-                                    {event.time}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge 
-                                      variant={
-                                        event.displayType === 'IN' ? 'default' : 
-                                        event.displayType === 'OUT' ? 'destructive' : 'outline'
-                                      }
-                                      className={
-                                        event.displayType === 'IN' ? 'bg-green-100 text-green-800' : 
-                                        event.displayType === 'OUT' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
-                                      }
-                                    >
-                                      {event.displayType === 'IN' ? 'Entrée' : 
-                                       event.displayType === 'OUT' ? 'Sortie' : 'Inconnu'}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>{event.readerName || 'N/A'}</TableCell>
-                                </TableRow>
-                              ))}
+                              {formatEventsForDisplay(detailRecord.events).map((event, index) => {
+                                // Créer une clé unique pour chaque événement
+                                const eventKey = event._id || `${event.badgeNumber}_${event.eventDate}_${event.time}_${index}`;
+                                return (
+                                  <TableRow key={eventKey} className="hover:bg-blue-50/50">
+                                    <TableCell className={cn(
+                                      event.displayType === 'IN' ? "text-green-700 font-medium" : 
+                                      event.displayType === 'OUT' ? "text-red-700 font-medium" : "text-gray-700 font-medium"
+                                    )}>
+                                      {event.time}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Badge 
+                                        variant={
+                                          event.displayType === 'IN' ? 'default' : 
+                                          event.displayType === 'OUT' ? 'destructive' : 'outline'
+                                        }
+                                        className={
+                                          event.displayType === 'IN' ? 'bg-green-100 text-green-800' : 
+                                          event.displayType === 'OUT' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                                        }
+                                      >
+                                        {event.displayType === 'IN' ? 'Entrée' : 
+                                         event.displayType === 'OUT' ? 'Sortie' : 'Inconnu'}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>{event.readerName || 'N/A'}</TableCell>
+                                  </TableRow>
+                                );
+                              })}
                             </TableBody>
                           </Table>
                         </div>

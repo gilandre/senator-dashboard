@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start -p ${PORT:-3010}",
     "start:env": "node start.js",
-    "check-env": "node scripts/check-env.js"
+    "check-env": "node scripts/check-env.js",
+    "db:seed": "ts-node prisma/seed.ts"
   },
   "prisma": {
     "seed": "npx ts-node --compiler-options {\"module\":\"CommonJS\"} prisma/seed.ts"
