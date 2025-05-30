@@ -20,227 +20,116 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Permissions insuffisantes' }, { status: 403 });
     }
 
-    // Démarrer l'importation
-    console.log('Démarrage de l\'importation des visiteurs depuis les logs d\'accès...');
+    console.log('Démarrage de l\'importation des visiteurs...');
     
-    const startTime = Date.now();
-    
-    // 1. Récupérer tous les logs d'accès avec group_name contenant 'Visiteurs' et qui ont un nom complet
-    console.log('Recherche des logs avec group_name contenant "Visiteurs"...');
-    
-    // D'abord, récupérons quelques exemples de group_name pour vérifier
-    const groupNameSamples = await prisma.access_logs.findMany({
-      select: {
-        group_name: true
-      },
-      distinct: ['group_name'],
-      take: 10
+    // 1. PURGER LES EMPLOYÉS DE LA TABLE VISITORS
+    // Récupérer tous les badges de la table employés
+    const employeeBadges = await prisma.employees.findMany({
+      select: { badge_number: true }
     });
     
-    console.log('Exemples de group_name disponibles:', groupNameSamples.map(g => g.group_name));
+    const employeeBadgeNumbers = employeeBadges.map(e => e.badge_number);
     
-    const uniqueVisitorLogs = await prisma.access_logs.findMany({
-      where: {
-        group_name: {
-          contains: 'Visiteurs'
-        },
-        full_name: {
-          not: '',
-        },
-        badge_number: {
-          not: '',
-        },
-      },
-      distinct: ['badge_number'],
-      orderBy: {
-        event_date: 'desc',
-      },
-    });
-
-    console.log(`Trouvé ${uniqueVisitorLogs.length} visiteurs uniques dans les logs d'accès.`);
-    
-    // Si nous ne trouvons pas de visiteurs, essayons avec un texte différent
-    if (uniqueVisitorLogs.length === 0) {
-      console.log('Aucun visiteur trouvé avec "Visiteurs". Essai avec "Visiteur"...');
-      const uniqueVisitorLogsAlt = await prisma.access_logs.findMany({
+    // Supprimer tous les visiteurs dont le badge_number correspond à un employé
+    if (employeeBadgeNumbers.length > 0) {
+      const purgeResult = await prisma.visitors.deleteMany({
         where: {
-          group_name: {
-            contains: 'Visiteur'
-          },
-          full_name: {
-            not: '',
-          },
           badge_number: {
-            not: '',
-          },
-        },
-        distinct: ['badge_number'],
-        take: 5
+            in: employeeBadgeNumbers
+          }
+        }
       });
       
-      console.log(`Trouvé ${uniqueVisitorLogsAlt.length} visiteurs avec "Visiteur" au singulier.`);
-      console.log('Exemples:', uniqueVisitorLogsAlt.map(v => ({ 
-        badge: v.badge_number, 
-        name: v.full_name,
-        group: v.group_name
-      })));
+      console.log(`Purge des employés de la table visitors: ${purgeResult.count} entrées supprimées`);
     }
+    
+    // 2. Récupérer tous les logs d'accès avec person_type = 'visitor' ou group_name contenant "visitor/visiteur"
+    console.log('Récupération des logs de visiteurs...');
+    const accessLogs = await prisma.access_logs.findMany({
+      where: {
+        OR: [
+          { person_type: 'visitor' },
+          { 
+            group_name: {
+              contains: 'visit'
+            }
+          }
+        ]
+      },
+      distinct: ['badge_number'],
+      orderBy: { event_date: 'desc' }
+    });
 
-    let created = 0;
-    let skipped = 0;
-    let errors = 0;
-    let updated = 0;
+    console.log(`Trouvé ${accessLogs.length} badges visiteurs uniques dans les logs d'accès`);
 
-    // 2. Pour chaque log unique, vérifier si le visiteur existe déjà
-    for (const log of uniqueVisitorLogs) {
+    // 3. Récupérer les visiteurs existants
+    const existingVisitors = await prisma.visitors.findMany({
+      select: { badge_number: true }
+    });
+    
+    const existingBadgeNumbers = existingVisitors.map(v => v.badge_number);
+    console.log(`${existingVisitors.length} visiteurs déjà dans la base de données`);
+
+    // 4. Filtrer pour ne garder que les nouveaux visiteurs et s'assurer qu'ils ne sont pas des employés
+    const newVisitors = accessLogs.filter(log => 
+      !existingBadgeNumbers.includes(log.badge_number) && 
+      !employeeBadgeNumbers.includes(log.badge_number)
+    );
+    
+    console.log(`${newVisitors.length} nouveaux visiteurs à ajouter`);
+
+    // 5. Insérer les nouveaux visiteurs
+    const addedVisitors: { badge_number: string; first_name: string; last_name: string }[] = [];
+    
+    for (const log of newVisitors) {
+      // Extraire le prénom et le nom du full_name si disponible
+      let firstName = 'Visiteur';
+      let lastName = log.badge_number;
+      
+      if (log.full_name) {
+        const nameParts = log.full_name.split(' ');
+        if (nameParts.length >= 2) {
+          firstName = nameParts[0];
+          lastName = nameParts.slice(1).join(' ');
+        } else {
+          firstName = log.full_name;
+        }
+      }
+      
       try {
-        const { badge_number, full_name } = log;
-        
-        // Ignorer les entrées sans nom complet ou badge
-        if (!full_name || !badge_number) {
-          continue;
-        }
-        
-        // Vérifier si le visiteur existe déjà
-        const existingVisitor = await prisma.visitors.findUnique({
-          where: {
-            badge_number,
-          },
-        });
-
-        // Extraire le prénom et le nom du full_name
-        let firstName = '';
-        let lastName = '';
-
-        if (full_name) {
-          const nameParts = full_name.trim().split(' ');
-          if (nameParts.length >= 2) {
-            firstName = nameParts[0];
-            lastName = nameParts.slice(1).join(' ');
-          } else {
-            firstName = full_name;
-            lastName = '';
-          }
-        }
-
-        // Obtenir la première et dernière fois où ce badge a été vu
-        const firstSeen = await prisma.access_logs.findFirst({
-          where: {
-            badge_number,
-            group_name: {
-              contains: 'Visiteurs'
-            }
-          },
-          orderBy: {
-            event_date: 'asc'
-          },
-          select: {
-            event_date: true
-          }
-        });
-
-        const lastSeen = await prisma.access_logs.findFirst({
-          where: {
-            badge_number,
-            group_name: {
-              contains: 'Visiteurs'
-            }
-          },
-          orderBy: {
-            event_date: 'desc'
-          },
-          select: {
-            event_date: true
-          }
-        });
-
-        // Compter le nombre d'accès
-        const accessCount = await prisma.access_logs.count({
-          where: {
-            badge_number,
-            group_name: {
-              contains: 'Visiteurs'
-            }
-          }
-        });
-
-        if (existingVisitor) {
-          // Mettre à jour le visiteur existant
-          await prisma.visitors.update({
-            where: {
-              badge_number,
-            },
-            data: {
-              access_count: accessCount,
-              first_seen: firstSeen?.event_date,
-              last_seen: lastSeen?.event_date,
-              updated_at: new Date()
-            },
-          });
-          updated++;
-          continue;
-        }
-
-        // Créer le visiteur
-        await prisma.visitors.create({
+        const visitor = await prisma.visitors.create({
           data: {
-            badge_number,
+            badge_number: log.badge_number,
             first_name: firstName,
             last_name: lastName,
-            company: 'Inconnu', // Valeur par défaut
+            company: log.group_name || 'Externe',
+            reason: 'Visite',
             status: 'active',
-            access_count: accessCount,
-            first_seen: firstSeen?.event_date,
-            last_seen: lastSeen?.event_date,
-            created_at: new Date(),
-            updated_at: new Date(),
-          },
+            access_count: 1,
+            first_seen: log.event_date,
+            last_seen: log.event_date
+          }
         });
-
-        created++;
+        
+        addedVisitors.push({
+          badge_number: visitor.badge_number,
+          first_name: visitor.first_name,
+          last_name: visitor.last_name
+        });
       } catch (error) {
-        console.error('Erreur lors de la création d\'un visiteur:', error);
-        errors++;
+        console.error(`Erreur lors de l'ajout du visiteur ${log.badge_number}:`, error);
       }
     }
 
-    const duration = (Date.now() - startTime) / 1000;
-
-    // Créer un enregistrement d'activité pour cette importation
-    await prisma.user_activities.create({
-      data: {
-        user_id: parseInt(session.user.id),
-        action: 'IMPORT_VISITORS_BATCH',
-        details: JSON.stringify({
-          total: uniqueVisitorLogs.length,
-          created,
-          updated,
-          skipped,
-          errors,
-          duration: `${duration.toFixed(2)} secondes`
-        }),
-        ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
-        timestamp: new Date()
-      }
+    return NextResponse.json({ 
+      success: true, 
+      message: `${addedVisitors.length} nouveaux visiteurs importés avec succès. ${employeeBadgeNumbers.length > 0 ? `${employeeBadgeNumbers.length} employés purgés de la table visitors.` : ''}`,
+      visitorsAdded: addedVisitors.length,
+      employeesPurged: employeeBadgeNumbers.length
     });
-
-    // Retourner les résultats
-    return NextResponse.json({
-      success: true,
-      stats: {
-        total: uniqueVisitorLogs.length,
-        created,
-        updated,
-        skipped,
-        errors,
-        duration: `${duration.toFixed(2)} secondes`
-      }
-    });
+    
   } catch (error) {
     console.error('Erreur lors de l\'importation des visiteurs:', error);
-    return NextResponse.json({ 
-      error: 'Erreur lors de l\'importation des visiteurs',
-      details: (error as Error).message
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Erreur lors de l\'importation des visiteurs' }, { status: 500 });
   }
 } 

@@ -14,6 +14,24 @@ export function useAuth() {
     router.push('/auth/login');
   };
 
+  // Add permission check hook
+  const usePermissions = () => {
+    const [permissions, setPermissions] = useState<string[]>([]);
+    
+    useEffect(() => {
+      const fetchPermissions = async () => {
+        const res = await fetch('/api/auth/permissions');
+        const data = await res.json();
+        setPermissions(data.permissions);
+      };
+      fetchPermissions();
+    }, []);
+    
+    return {
+      hasPermission: (required: string) => permissions.includes(required)
+    };
+  };
+
   return {
     session,
     status,
@@ -23,4 +41,4 @@ export function useAuth() {
     logout,
     user: session?.user,
   };
-} 
+}

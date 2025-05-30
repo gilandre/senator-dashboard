@@ -1,22 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { connectToDatabase } from '@/lib/mongodb';
-import mongoose from 'mongoose';
+import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-
-// Define the schema for user activities
-const userActivitySchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  userName: { type: String, required: true },
-  action: { type: String, required: true },
-  details: { type: String, required: true },
-  timestamp: { type: Date, default: Date.now },
-  ipAddress: { type: String }
-});
-
-// Get the model (creating it if it doesn't exist)
-const UserActivity = mongoose.models.UserActivity || 
-  mongoose.model('UserActivity', userActivitySchema);
 
 export async function GET(request: NextRequest) {
   try {
@@ -30,9 +15,6 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    // Connect to the database
-    await connectToDatabase();
-    
     // Get query parameters
     const searchParams = request.nextUrl.searchParams;
     const limit = parseInt(searchParams.get('limit') || '50');
@@ -40,15 +22,18 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get('action');
     
     // Build the query
-    const query: any = {};
-    if (userId) query.userId = userId;
-    if (action) query.action = action;
+    const where: any = {};
+    if (userId) where.userId = parseInt(userId);
+    if (action) where.action = action;
     
     // Fetch activities with pagination
-    const activities = await UserActivity.find(query)
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .lean();
+    const activities = await prisma.user_activities.findMany({
+      where,
+      orderBy: {
+        timestamp: 'desc'
+      },
+      take: limit
+    });
     
     return NextResponse.json(activities);
   } catch (error) {
@@ -72,14 +57,11 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Connect to the database
-    await connectToDatabase();
-    
     // Get the request body
     const body = await request.json();
     
     // Validate required fields
-    if (!body.userId || !body.userName || !body.action || !body.details) {
+    if (!body.userId || !body.action) {
       return NextResponse.json(
         { error: 'Champs obligatoires manquants' },
         { status: 400 }
@@ -91,17 +73,16 @@ export async function POST(request: NextRequest) {
                       request.headers.get('x-real-ip') || 
                       'unknown';
     
-    // Create the activity
-    const activity = new UserActivity({
-      userId: body.userId,
-      userName: body.userName,
-      action: body.action,
-      details: body.details,
-      ipAddress
+    // Create the activity using Prisma
+    const activity = await prisma.user_activities.create({
+      data: {
+        user_id: parseInt(body.userId),
+        action: body.action,
+        details: body.details || null,
+        ip_address: ipAddress,
+        timestamp: new Date()
+      }
     });
-    
-    // Save the activity
-    await activity.save();
     
     return NextResponse.json({ success: true, activity });
   } catch (error) {

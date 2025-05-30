@@ -1,7 +1,25 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// GET /api/config/attendance - Récupérer les paramètres d'assiduité
+/**
+ * @swagger
+ * /api/config/attendance:
+ *   get:
+ *     summary: Get attendance configuration
+ *     description: Retrieve current attendance parameters
+ *     responses:
+ *       200:
+ *         description: Success
+ *         content:
+ *           application/json:
+ *             example:
+ *               id: 1
+ *               startHour: '08:00'
+ *               endHour: '17:00'
+ *               dailyHours: 8.0
+ *       500:
+ *         description: Server error
+ */
 export async function GET() {
   try {
     // Récupérer les paramètres d'assiduité (toujours une seule entrée - on prend la première)
@@ -48,7 +66,35 @@ export async function GET() {
   }
 }
 
-// PUT /api/config/attendance - Mettre à jour les paramètres d'assiduité
+/**
+ * @swagger
+ * /api/config/attendance:
+ *   put:
+ *     summary: Update attendance configuration
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               startHour:
+ *                 type: string
+ *                 example: '08:00'
+ *               endHour:
+ *                 type: string
+ *                 example: '17:00'
+ *               dailyHours:
+ *                 type: number
+ *                 example: 8.5
+ *     responses:
+ *       200:
+ *         description: Configuration updated
+ *       400:
+ *         description: Invalid parameters
+ *       500:
+ *         description: Server error
+ */
 export async function PUT(request: Request) {
   try {
     const body = await request.json();
@@ -140,4 +186,4 @@ export async function PUT(request: Request) {
       { status: 500 }
     );
   }
-} 
+}

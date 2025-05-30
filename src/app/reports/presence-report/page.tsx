@@ -53,7 +53,9 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { calculatePresenceStats, formatHours, formatPercentage } from '@/lib/utils/presence-calculations';
+import { calculatePresenceStats, formatHours, formatPercentage, validateDataConsistency } from '@/lib/utils/presence-calculations';
+import { ExportDialog } from '@/components/ui/export-dialog';
+import html2canvas from 'html2canvas';
 
 export default function PresenceReportPage() {
   const router = useRouter();
@@ -84,6 +86,10 @@ export default function PresenceReportPage() {
   
   // Export
   const [exportFormat, setExportFormat] = useState('pdf');
+  const [selectedExportType, setSelectedExportType] = useState<'detailed' | 'summary'>('detailed');
+
+  // État pour ExportDialog
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Récupérer les groupes disponibles
   useEffect(() => {
@@ -246,40 +252,183 @@ export default function PresenceReportPage() {
     setShowExportDialog(false);
     
     try {
+      // Déterminer le type d'export (détaillé ou synthèse)
+      const exportType = selectedExportType || 'summary';
+      
+      // TEMPORAIREMENT DÉSACTIVER L'EXPORT PDF
       if (exportFormat === 'pdf') {
-        // Utiliser la nouvelle API spécifique pour le PDF basé sur HTML
-        const response = await fetch('/api/export/pdf', {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json',
-            'x-test-bypass-auth': 'admin' // Pour le développement uniquement
-          },
-          body: JSON.stringify({
-            data,
-            dateRange
-          })
-        });
+        toast.error("L'export PDF est temporairement désactivé. Veuillez utiliser Excel ou CSV.");
+        setIsLoading(false);
+        return;
+      }
+
+      // Vérifier la compatibilité format/type d'export
+      if ((exportType === 'detailed' && exportFormat === 'pdf') || 
+          (exportType === 'summary' && (exportFormat === 'excel' || exportFormat === 'csv'))) {
+        throw new Error(`Le format ${exportFormat} n'est pas compatible avec le type d'export ${exportType}`);
+      }
+
+      // Préparer les données des graphiques pour la vérification de cohérence
+      const graphData = {
+        dailyData: data?.daily ? data.daily.map(day => ({
+          date: day.date || '',
+          totalHours: (day.duration || 0) / 60,
+          employeeCount: day.count || 1,
+          averageHours: (day.duration || 0) / 60 / (day.count || 1)
+        })) : [],
+        weeklyData: data?.weekly ? data.weekly.map(week => {
+          const weekNum = week.day?.includes('Semaine') 
+            ? week.day.replace('Semaine ', '')
+            : week.day;
+          return {
+            weekId: weekNum || '',
+            weekLabel: week.day || `Semaine ${weekNum}`,
+            totalHours: (week.avgDuration || 0) / 60,
+            employeeCount: week.count || 1,
+            averageHours: (week.avgDuration || 0) / 60
+          };
+        }) : []
+      };
+
+      // Vérifier la cohérence des données
+      if (data) {
+        const { isConsistent, differences } = validateDataConsistency(data, graphData, data.summary);
         
-        if (!response.ok) {
-          throw new Error(`Erreur lors de l'exportation: ${response.status}`);
+        if (!isConsistent) {
+          console.warn("Incohérences détectées dans les données:", differences);
+          // Avertir l'utilisateur tout en continuant l'export
+          toast.warning("Des incohérences ont été détectées dans les données. L'export continuera, mais vérifiez les résultats.");
         }
-        
-        // Récupérer le blob du rapport exporté
-        const blob = await response.blob();
-        
-        // Créer un URL pour le téléchargement
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `rapport_presence_${new Date().toISOString().split('T')[0]}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        
-        // Nettoyer
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-        
-        toast.success(`Rapport exporté en format PDF`);
+      }
+      
+      // Pour les PDF, préparer les données pour l'export
+      const exportData = { ...data };
+      
+      if (exportFormat === 'pdf') {
+        // Pour les PDF, utiliser les endpoints spécialisés selon le type de rapport
+        if (exportType === 'summary') {
+          // Pour le rapport de synthèse, utiliser l'endpoint dédié sans données détaillées
+          console.log("Utilisation de l'API de synthèse pour le rapport PDF");
+          
+          // Capturer le graphique pour les rapports PDF de synthèse
+          let chartImage: string | null = null;
+          try {
+            // Capturer le graphique actuel
+            const chartElement = document.querySelector('.presence-time-chart');
+            if (chartElement) {
+              console.log("Capture du graphique pour l'export PDF");
+              const canvas = await html2canvas(chartElement as HTMLElement, {
+                scale: 2, // Meilleure qualité
+                backgroundColor: '#ffffff'
+              });
+              chartImage = canvas.toDataURL('image/png');
+              console.log("Graphique capturé avec succès");
+            }
+          } catch (captureError) {
+            console.error("Erreur lors de la capture du graphique:", captureError);
+          }
+          
+          // Debug: Vérifier le code version pour s'assurer qu'on utilise la dernière version
+          console.log("VERSION DU CODE: CODE-SYNTHESE-V3");
+          
+          // Utiliser l'endpoint spécialisé pour les rapports de synthèse
+          const response = await fetch('/api/export/presence-summary', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'X-Debug-Token': `${Date.now()}`, // Éviter le cache avec un token unique
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0',
+              'x-test-bypass-auth': 'admin' // Pour le développement uniquement
+            },
+            body: JSON.stringify({
+              options: {
+                startDate: dateRange.from ? dateRange.from.toISOString().split('T')[0] : '',
+                endDate: dateRange.to ? dateRange.to.toISOString().split('T')[0] : '',
+                filters: {
+                  department: filters.groupe !== 'all' ? filters.groupe : undefined,
+                  personType: filters.personType !== 'all' ? filters.personType : undefined
+                }
+              },
+              chartImage
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Erreur lors de l'exportation: ${response.status}`);
+          }
+          
+          // Récupérer le blob du rapport exporté
+          const blob = await response.blob();
+          
+          // Créer un URL pour le téléchargement
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          
+          // Formater le nom de fichier avec date et heure
+          const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+          const timeStr = new Date().toISOString().split('T')[1].substring(0, 5).replace(/:/g, '-');
+          
+          a.download = `rapport_presence_synthese_${dateStr}_${timeStr}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          
+          // Nettoyer
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          
+          toast.success(`Rapport de synthèse exporté en format PDF`);
+          
+        } else {
+          // Pour le rapport détaillé, utiliser l'API standard
+          const response = await fetch('/api/export/pdf', {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'x-test-bypass-auth': 'admin' // Pour le développement uniquement
+            },
+            body: JSON.stringify({
+              data: exportData,
+              options: {
+                source: 'presence', // Important: spécifier la source pour le template
+                startDate: dateRange.from ? dateRange.from.toISOString().split('T')[0] : '',
+                endDate: dateRange.to ? dateRange.to.toISOString().split('T')[0] : '',
+                reportType: exportType, // Utiliser le type d'export sélectionné
+                includeCharts: true,
+                includeDetails: exportType === 'detailed'
+              }
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Erreur lors de l'exportation: ${response.status}`);
+          }
+          
+          // Récupérer le blob du rapport exporté
+          const blob = await response.blob();
+          
+          // Créer un URL pour le téléchargement
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          
+          // Nommer le fichier en fonction du format
+          const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+          const timeStr = new Date().toISOString().split('T')[1].substring(0, 5).replace(/:/g, '-');
+          let extension = exportFormat;
+          
+          a.download = `rapport_presence_${exportType}_${dateStr}_${timeStr}.${extension}`;
+          document.body.appendChild(a);
+          a.click();
+          
+          // Nettoyer
+          window.URL.revokeObjectURL(url);
+          document.body.removeChild(a);
+          
+          toast.success(`Rapport de ${exportType === 'detailed' ? 'données détaillées' : 'synthèse'} exporté en format ${exportFormat.toUpperCase()}`);
+        }
       } else {
         // Pour les autres formats, utiliser l'API existante
         const response = await fetch('/api/export/report', {
@@ -293,10 +442,11 @@ export default function PresenceReportPage() {
             data,
             dateRange,
             filters,
+            exportType,
             options: {
-              includeCharts: true,
-              includeDetails: true,
-              includeRecommendations: true,
+              includeCharts: false, // Les graphiques ne sont pas inclus dans les exports Excel/CSV
+              includeDetails: exportType === 'detailed',
+              includeRecommendations: exportType === 'summary',
               netStatistics: true
             }
           })
@@ -316,9 +466,10 @@ export default function PresenceReportPage() {
         
         // Nommer le fichier en fonction du format
         const dateStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
+        const timeStr = new Date().toISOString().split('T')[1].substring(0, 5).replace(/:/g, '-');
         let extension = exportFormat;
         
-        a.download = `rapport_presence_${dateStr}.${extension}`;
+        a.download = `rapport_presence_${exportType}_${dateStr}_${timeStr}.${extension}`;
         document.body.appendChild(a);
         a.click();
         
@@ -326,7 +477,7 @@ export default function PresenceReportPage() {
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
         
-        toast.success(`Rapport exporté en format ${exportFormat.toUpperCase()}`);
+        toast.success(`Rapport de ${exportType === 'detailed' ? 'données détaillées' : 'synthèse'} exporté en format ${exportFormat.toUpperCase()}`);
       }
     } catch (error) {
       console.error('Erreur lors de l\'exportation:', error);
@@ -571,45 +722,10 @@ export default function PresenceReportPage() {
           </Dialog>
           
           {/* Dialog d'export */}
-          <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-            <DialogTrigger asChild>
-              <Button size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Exporter
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[425px]">
-              <DialogHeader>
-                <DialogTitle>Exporter le rapport</DialogTitle>
-                <DialogDescription>
-                  Choisissez le format d'exportation.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-4 items-center gap-4">
-                  <Label htmlFor="format" className="text-right">
-                    Format
-                  </Label>
-                  <Select 
-                    value={exportFormat} 
-                    onValueChange={setExportFormat}
-                  >
-                    <SelectTrigger id="format" className="col-span-3">
-                      <SelectValue placeholder="Choisir un format" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="pdf">PDF</SelectItem>
-                      <SelectItem value="xlsx">Excel (XLSX)</SelectItem>
-                      <SelectItem value="csv">CSV (données brutes)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" onClick={handleExport}>Exporter</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button size="sm" onClick={() => setExportDialogOpen(true)}>
+            <Download className="h-4 w-4 mr-2" />
+            Exporter
+          </Button>
         </div>
       </div>
 
@@ -817,6 +933,31 @@ export default function PresenceReportPage() {
           </Button>
         </div>
       )}
+
+      {/* Ajouter le composant ExportDialog à la fin du composant */}
+      <ExportDialog
+        isOpen={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        title="Exporter le rapport de présence"
+        description="Exportez les données détaillées de présence pour la période sélectionnée"
+        dateRange={dateRange}
+        filters={{
+          employeeId: undefined,
+          department: filters.groupe !== 'all' ? filters.groupe : undefined
+        }}
+        exportTypes={[
+          {
+            id: 'detailed',
+            name: 'Données détaillées',
+            description: 'Exporte tous les événements de présence jour par jour sans agrégation'
+          },
+          {
+            id: 'summary',
+            name: 'Rapport de synthèse',
+            description: 'Exporte un résumé des présences avec statistiques et graphiques'
+          }
+        ]}
+      />
     </div>
   );
 } 

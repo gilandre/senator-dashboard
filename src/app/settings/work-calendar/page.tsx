@@ -187,8 +187,12 @@ export default function WorkCalendarPage() {
         throw new Error('Erreur lors du chargement des jours fériés');
       }
       const data = await response.json();
-      console.log('Jours fériés chargés:', data.map((h: any) => ({ id: h.id, name: h.name })));
-      setHolidays(data);
+      
+      // Accéder à la propriété holidays de la réponse
+      const holidays = data.holidays || [];
+      
+      console.log('Jours fériés chargés:', holidays.map((h: any) => ({ id: h.id, name: h.name })));
+      setHolidays(holidays);
     } catch (error) {
       console.error('Erreur:', error);
       toast({

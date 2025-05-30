@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
 import * as bcrypt from 'bcryptjs';
+import { AuthLogger } from '@/lib/security/authLogger';
 
 export async function POST(request: Request) {
   try {
@@ -16,13 +17,14 @@ export async function POST(request: Request) {
       );
     }
     
-    // Rechercher l'utilisateur par email avec Prisma
+    // Rechercher l'utilisateur par email
     const user = await prisma.user.findUnique({
       where: { email }
     });
     
     // Si l'utilisateur n'existe pas
     if (!user) {
+      await AuthLogger.logFailedLogin(email, 'Utilisateur non trouvé');
       return NextResponse.json(
         { error: 'Identifiants incorrects' }, 
         { status: 401 }
@@ -31,6 +33,7 @@ export async function POST(request: Request) {
     
     // Si l'utilisateur est inactif
     if (user.status === 'inactive') {
+      await AuthLogger.logFailedLogin(email, 'Compte désactivé');
       return NextResponse.json(
         { error: 'Compte désactivé. Veuillez contacter l\'administrateur' }, 
         { status: 403 }
@@ -41,26 +44,24 @@ export async function POST(request: Request) {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     
     if (!isPasswordValid) {
+      await AuthLogger.logFailedLogin(email, 'Mot de passe incorrect');
       return NextResponse.json(
         { error: 'Identifiants incorrects' }, 
         { status: 401 }
       );
     }
     
-    // Mettre à jour la date de dernière connexion (si le champ existe dans Prisma)
+    // Mettre à jour la date de dernière connexion
     await prisma.user.update({
       where: { id: user.id },
-      data: { updated_at: new Date() }
-    });
-    
-    // Enregistrer l'activité de connexion
-    await prisma.user_activities.create({
-      data: {
-        user_id: user.id,
-        action: 'login',
-        details: `Connexion depuis ${request.headers.get('user-agent') || 'navigateur inconnu'}`
+      data: { 
+        updated_at: new Date(),
+        last_login: new Date()
       }
     });
+    
+    // Enregistrer la connexion réussie
+    await AuthLogger.logSuccessfulLogin(user.id, email);
 
     // Définir un cookie d'authentification
     cookies().set({
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
         name: user.name,
         email: user.email,
         role: user.role,
+        first_login: user.first_login
       }
     }, { status: 200 });
   } catch (error) {

@@ -40,6 +40,9 @@ export async function parseCSVFile(file: File): Promise<AccessRecord[]> {
         return headerMap[header] || header;
       },
       transform: (value, field) => {
+        if (field === 'eventTime') {
+          return value;
+        }
         if (field === 'eventDate' || field === 'validityStartDate' || field === 'creationDate') {
           if (!value) return null;
           // Parse date from DD/MM/YYYY format
@@ -86,6 +89,9 @@ export async function parseCSVString(csvString: string): Promise<AccessRecord[]>
         return headerMap[header] || header;
       },
       transform: (value, field) => {
+        if (field === 'eventTime') {
+          return value ? value.split(':').slice(0, 2).join(':') : value;
+        }
         if (field === 'eventDate' || field === 'validityStartDate' || field === 'creationDate') {
           if (!value) return null;
           // Parse date from DD/MM/YYYY format
@@ -511,4 +517,4 @@ function getPairedEntriesExits(data: AccessRecord[]): {
   });
   
   return entriesExits;
-} 
+}

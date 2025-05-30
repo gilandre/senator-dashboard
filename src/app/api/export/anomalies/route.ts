@@ -1,14 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
+import { AuthLogger } from '@/lib/security/authLogger';
 import ExcelJS from 'exceljs';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
+import { generatePdfReport } from '@/lib/services/pdf-export-service';
+import { logExportEvent } from '@/lib/services/export-service';
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
+import { APP_CONFIG } from '@/config/app';
 
 // Fonction principale pour traiter les requêtes d'export
 export async function GET(req: NextRequest) {
+  const startTime = Date.now();
+  console.log(`[EXPORT_ANOMALIES] Démarrage de l'export d'anomalies`);
+  
   try {
     // Vérification d'authentification
     const bypassAuth = process.env.NODE_ENV === 'development' && 
@@ -18,6 +27,7 @@ export async function GET(req: NextRequest) {
       const session = await getServerSession(authOptions);
       
       if (!session) {
+        console.log(`[EXPORT_ANOMALIES] Tentative d'export non autorisée`);
         return NextResponse.json(
           { error: "Non autorisé" },
           { status: 401 }
@@ -30,8 +40,12 @@ export async function GET(req: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const format = searchParams.get('format') || 'pdf';
+    const exportType = searchParams.get('exportType') || 'detailed';
+    
+    console.log(`[EXPORT_ANOMALIES] Paramètres d'export reçus: format=${format}, exportType=${exportType}, startDate=${startDate}, endDate=${endDate}`);
     
     if (!startDate || !endDate) {
+      console.log(`[EXPORT_ANOMALIES] Paramètres manquants: startDate ou endDate`);
       return NextResponse.json(
         { error: "Les dates de début et de fin sont requises" },
         { status: 400 }
@@ -39,26 +53,64 @@ export async function GET(req: NextRequest) {
     }
     
     // Récupérer les données d'anomalie
+    console.log(`[EXPORT_ANOMALIES] Récupération des données d'anomalies du ${startDate} au ${endDate}`);
     const anomalyData = await fetchAnomalyDataForExport(startDate, endDate);
+    console.log(`[EXPORT_ANOMALIES] ${anomalyData.anomalies.length} anomalies récupérées`);
+    
+    // Vérifier si des données sont disponibles
+    if (anomalyData.anomalies.length === 0) {
+      console.log(`[EXPORT_ANOMALIES] Aucune anomalie trouvée pour la période`);
+      return NextResponse.json(
+        { error: "Aucune anomalie trouvée pour la période spécifiée" },
+        { status: 404 }
+      );
+    }
     
     // Générer le rapport dans le format demandé
+    console.log(`[EXPORT_ANOMALIES] Génération du rapport au format ${format}`);
+    let response;
+    
     switch (format.toLowerCase()) {
       case 'pdf':
-        return await generatePdfReport(anomalyData, startDate, endDate);
+        // PDF is disabled in the UI, but in case it's requested directly via API, return a clear error
+        console.log(`[EXPORT_ANOMALIES] Export PDF désactivé`);
+        return NextResponse.json(
+          { 
+            error: "L'export PDF est temporairement désactivé pour les anomalies",
+            details: "Veuillez utiliser les formats Excel ou CSV",
+            timestamp: new Date().toISOString()
+          },
+          { status: 400 }
+        );
       case 'xlsx':
-        return await generateExcelReport(anomalyData, startDate, endDate);
+      case 'excel':
+        response = await generateExcelReport(anomalyData, startDate, endDate);
+        break;
       case 'csv':
-        return generateCsvReport(anomalyData, startDate, endDate);
+        response = generateCsvReport(anomalyData, startDate, endDate);
+        break;
       default:
+        console.log(`[EXPORT_ANOMALIES] Format non pris en charge: ${format}`);
         return NextResponse.json(
           { error: "Format d'export non pris en charge" },
           { status: 400 }
         );
     }
+    
+    const duration = Date.now() - startTime;
+    console.log(`[EXPORT_ANOMALIES] Export terminé en ${duration}ms`);
+    return response;
   } catch (error) {
-    console.error('Erreur lors de l\'exportation des anomalies:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Erreur inconnue';
+    console.error(`[EXPORT_ANOMALIES] Erreur lors de l'exportation des anomalies: ${errorMessage}`, error);
+    
+    // Retourner une réponse d'erreur structurée
     return NextResponse.json(
-      { error: "Erreur lors de l'exportation des anomalies" },
+      { 
+        error: "Erreur lors de l'exportation des anomalies",
+        details: errorMessage,
+        timestamp: new Date().toISOString()
+      },
       { status: 500 }
     );
   }
@@ -100,6 +152,13 @@ async function fetchAnomalyDataForExport(startDate: string, endDate: string) {
     AND badge_number IS NOT NULL
   `;
   
+  // Récupérer le total des accès pour calculer le taux d'anomalies
+  const totalAccessesResult = await prisma.$queryRaw`
+    SELECT COUNT(*) as total
+    FROM access_logs
+    WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
+  `;
+  
   // Récupérer les types d'anomalies
   const anomalyTypes = await prisma.$queryRaw`
     SELECT 
@@ -126,6 +185,33 @@ async function fetchAnomalyDataForExport(startDate: string, endDate: string) {
     ORDER BY date DESC
   `;
   
+  // Compter les accès refusés
+  const accessDeniedResult = await prisma.$queryRaw`
+    SELECT COUNT(*) as total
+    FROM access_logs
+    WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
+    AND event_type = 'user_denied'
+    AND badge_number IS NOT NULL
+  `;
+  
+  // Compter les badges invalides
+  const invalidBadgesResult = await prisma.$queryRaw`
+    SELECT COUNT(*) as total
+    FROM access_logs
+    WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
+    AND event_type = 'invalid_badge'
+    AND badge_number IS NOT NULL
+  `;
+  
+  // Extraire les totaux
+  const totalAnomalies = Number((totalAnomaliesResult as any[])[0].total);
+  const totalAccesses = Number((totalAccessesResult as any[])[0].total);
+  const accessDenied = Number((accessDeniedResult as any[])[0].total);
+  const invalidBadges = Number((invalidBadgesResult as any[])[0].total);
+  
+  // Calculer le taux d'anomalies
+  const anomalyRate = totalAccesses > 0 ? totalAnomalies / totalAccesses : 0;
+  
   // Formater les données pour l'export
   return {
     anomalies: (anomalies as any[]).map(a => ({
@@ -141,7 +227,11 @@ async function fetchAnomalyDataForExport(startDate: string, endDate: string) {
       userName: a.userName,
       direction: a.direction
     })),
-    totalAnomalies: Number((totalAnomaliesResult as any[])[0].total),
+    totalAnomalies,
+    totalAccesses,
+    anomalyRate,
+    accessDenied,
+    invalidBadges,
     anomalyTypes: (anomalyTypes as any[]).map(t => ({
       eventType: t.eventType,
       count: Number(t.count)
@@ -155,250 +245,47 @@ async function fetchAnomalyDataForExport(startDate: string, endDate: string) {
   };
 }
 
-// Générer un rapport PDF
-async function generatePdfReport(data: any, startDate: string, endDate: string) {
-  const { anomalies, totalAnomalies, anomalyTypes, dailyAnomalies } = data;
+// Générer un rapport PDF en utilisant le service centralisé
+async function generatePdfReportWithService(data: any, startDate: string, endDate: string, exportType: string) {
+  logExportEvent(`Génération du rapport PDF d'anomalies pour la période ${startDate} au ${endDate}`);
   
-  // Créer un nouveau document PDF
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
-  
-  // Définir des constantes pour les marges
-  const marginLeft = 20;
-  const marginRight = 20;
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const contentWidth = pageWidth - marginLeft - marginRight;
-  
-  // Fonction pour les en-têtes et pieds de page
-  const addHeaderFooter = (doc: any, pageInfo: any) => {
-    // En-tête
-    doc.setFillColor(240, 240, 240);
-    doc.rect(0, 0, pageWidth, 20, 'F');
-    
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(60, 60, 60);
-    doc.text('Senator InvesTech - Rapport d\'anomalies', marginLeft, 13);
-    
-    // Date de génération en haut à droite
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Généré le: ${new Date().toLocaleDateString('fr-FR')}`, pageWidth - marginRight, 13, { align: 'right' });
-    
-    // Pied de page
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.5);
-    doc.line(marginLeft, pageHeight - 15, pageWidth - marginRight, pageHeight - 15);
-    
-    // Numéro de page
-    doc.setFontSize(8);
-    doc.text(`Page ${pageInfo.pageNumber}/${doc.getNumberOfPages()}`, pageWidth - marginRight, pageHeight - 10, { align: 'right' });
-  };
-  
-  // Ajouter l'en-tête à la première page
-  addHeaderFooter(doc, { pageNumber: 1 });
-  
-  // Titre principal
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(0, 0, 0);
-  doc.text(`Rapport d'anomalies d'accès`, marginLeft, 35);
-  
-  // Période
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Période: ${new Date(startDate).toLocaleDateString('fr-FR')} - ${new Date(endDate).toLocaleDateString('fr-FR')}`, marginLeft, 45);
-  
-  // Ajouter une ligne de séparation
-  doc.setDrawColor(150, 150, 150);
-  doc.setLineWidth(0.5);
-  doc.line(marginLeft, 50, pageWidth - marginRight, 50);
-  
-  // Statistiques
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Résumé des anomalies', marginLeft, 60);
-  
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Nombre total d'anomalies: ${totalAnomalies}`, marginLeft, 70);
-  
-  // Tableau des types d'anomalies
-  const typesTableData = anomalyTypes.map(type => {
-    const percentage = ((type.count / totalAnomalies) * 100).toFixed(1);
-    return [type.eventType, type.count.toString(), `${percentage}%`];
-  });
-  
-  // Créer une table pour les types d'anomalies
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Distribution des types d\'anomalies', marginLeft, 80);
-  
-  autoTable(doc, {
-    startY: 85,
-    head: [['Type d\'anomalie', 'Nombre', 'Pourcentage']],
-    body: typesTableData,
-    headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [240, 240, 240] },
-    margin: { left: marginLeft, right: marginRight, bottom: 15 },
-    styles: { fontSize: 10, cellPadding: 3 },
-    didDrawPage: (data) => {
-      // Ajouter l'en-tête et le pied de page sur chaque page
-      addHeaderFooter(doc, data);
+  try {
+    // Créer un dossier temporaire pour le fichier PDF
+    const tempDir = path.join(os.tmpdir(), `export_anomalies_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`);
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
     }
-  });
-  
-  // Position Y après le tableau
-  const finalY = (doc as any).lastAutoTable.finalY;
-  
-  // Vérifier s'il y a assez d'espace pour le graphique sur la page actuelle
-  if (finalY > pageHeight - 120) {
-    doc.addPage();
-  }
-  
-  // Graphique à barres pour les types d'anomalies
-  const barStartY = finalY > pageHeight - 120 ? 30 : finalY + 15;
-  const barStartX = marginLeft;
-  const barMaxWidth = contentWidth - 80; // Espace pour le texte à gauche et les valeurs à droite
-  const barHeight = 10;
-  const barSpacing = 5;
-  
-  // Titre du graphique
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Visualisation des anomalies', barStartX, barStartY);
-  
-  // Légende
-  doc.setFillColor(41, 128, 185);
-  doc.rect(barStartX, barStartY + 5, 5, 5, 'F');
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.text('Nombre d\'anomalies', barStartX + 10, barStartY + 9);
-  
-  // Dessiner les barres (limité aux 6 premiers types pour économiser de l'espace)
-  let currentY = barStartY + 20;
-  anomalyTypes.slice(0, 6).forEach((type, index) => {
-    const percentage = type.count / totalAnomalies;
-    const barWidth = Math.max(percentage * barMaxWidth, 5); // Au moins 5mm de largeur
     
-    // Dessiner la barre
-    doc.setFillColor(41, 128, 185);
-    doc.rect(barStartX + 65, currentY, barWidth, barHeight, 'F');
+    // Générer un nom de fichier unique
+    const dateStr = format(new Date(), 'yyyy-MM-dd_HH-mm');
+    const fileName = `rapport_anomalies_${exportType}_${dateStr}.pdf`;
+    const filePath = path.join(tempDir, fileName);
     
-    // Label du type d'anomalie (tronqué si trop long)
-    let typeLabel = type.eventType;
-    if (typeLabel.length > 10) {
-      typeLabel = typeLabel.substring(0, 9) + '...';
-    }
-    doc.setFontSize(9);
-    doc.text(typeLabel, barStartX, currentY + barHeight/2 + 1);
+    // Configurer les options du rapport pour le service centralisé
+    const reportOptions = {
+      startDate,
+      endDate,
+      reportType: exportType === 'summary' ? 'summary' : 'detailed' as 'summary' | 'detailed',
+      source: 'anomalies' as 'anomalies' | 'presence' | 'access',
+      includeCharts: true,
+      includeDetails: exportType === 'detailed',
+      logoUrl: APP_CONFIG.export.defaultLogo
+    };
     
-    // Valeur et pourcentage
-    doc.text(`${type.count} (${(percentage * 100).toFixed(1)}%)`, barStartX + 65 + barWidth + 5, currentY + barHeight/2 + 1);
+    // Générer le PDF en utilisant le service
+    const pdfBuffer = await generatePdfReport(data, reportOptions, filePath);
     
-    currentY += barHeight + barSpacing;
-  });
-  
-  // Déterminer si nous avons besoin d'une nouvelle page pour le tableau des anomalies
-  const trendEndY = currentY + 20;
-  if (trendEndY > pageHeight - 80) {
-    doc.addPage();
-    currentY = 30;
-  } else {
-    currentY = trendEndY;
-  }
-  
-  // Graphique de tendance des anomalies par jour
-  if (dailyAnomalies && dailyAnomalies.length > 0) {
-    doc.setFontSize(14);
-    doc.setFont('helvetica', 'bold');
-    doc.text('Tendance quotidienne des anomalies', marginLeft, currentY);
-    
-    // Dessiner un petit tableau pour la tendance au lieu d'un graphique
-    const trendData = dailyAnomalies.slice(0, 7).reverse(); // 7 derniers jours
-    
-    const trendTableRows = trendData.map(day => {
-      const dateObj = new Date(day.date);
-      return [
-        dateObj.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }),
-        day.count.toString()
-      ];
-    });
-    
-    // Ajouter un tableau compact pour les tendances
-    autoTable(doc, {
-      startY: currentY + 5,
-      head: [['Date', 'Nombre d\'anomalies']],
-      body: trendTableRows,
-      headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-      alternateRowStyles: { fillColor: [240, 240, 240] },
-      margin: { left: marginLeft, right: marginRight, bottom: 15 },
-      styles: { fontSize: 10, cellPadding: 3 },
-      didDrawPage: (data) => {
-        // Ajouter l'en-tête et le pied de page sur chaque page
-        addHeaderFooter(doc, data);
+    // Retourner le PDF
+    return new NextResponse(pdfBuffer, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `attachment; filename=${fileName}`
       }
     });
-    
-    currentY = (doc as any).lastAutoTable.finalY + 15;
+  } catch (error) {
+    console.error(`[EXPORT_ANOMALIES] Erreur lors de la génération du rapport PDF:`, error);
+    throw error; // Propager l'erreur pour le gestionnaire central
   }
-  
-  // Liste des anomalies - sur une nouvelle page si nécessaire
-  if (currentY > pageHeight - 100) {
-    doc.addPage();
-    currentY = 30;
-  }
-  
-  doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Liste des anomalies récentes', marginLeft, currentY);
-  
-  // Préparer les données pour le tableau des anomalies
-  const anomalyTableData = anomalies.slice(0, 20).map(a => [
-    a.eventDate ? new Date(a.eventDate).toLocaleDateString('fr-FR') : 'N/A',
-    a.eventTime || 'N/A',
-    a.badgeNumber || 'N/A',
-    a.userName || 'Inconnu',
-    a.reader || 'N/A',
-    a.eventType || 'N/A'
-  ]);
-  
-  // Créer un tableau pour les anomalies
-  autoTable(doc, {
-    startY: currentY + 5,
-    head: [['Date', 'Heure', 'Badge', 'Utilisateur', 'Lecteur', 'Type']],
-    body: anomalyTableData,
-    headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [240, 240, 240] },
-    margin: { left: marginLeft, right: marginRight, bottom: 15 },
-    styles: { fontSize: 9, cellPadding: 2 },
-    // Note de bas de page sur la dernière page
-    didDrawPage: (data) => {
-      // Ajouter l'en-tête et le pied de page sur chaque page
-      addHeaderFooter(doc, data);
-      
-      if (data.pageNumber === doc.getNumberOfPages()) {
-        doc.setFontSize(8);
-        doc.setTextColor(100, 100, 100);
-        doc.text('Note: Ce rapport ne présente que les 20 premières anomalies. Exportez en Excel ou CSV pour la liste complète.', marginLeft, pageHeight - 10);
-      }
-    }
-  });
-  
-  // Convertir le document en ArrayBuffer
-  const pdfBytes = doc.output('arraybuffer');
-  
-  // Retourner la réponse avec le fichier PDF
-  return new NextResponse(pdfBytes, {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="anomalies_${startDate.replace(/-/g, '')}_${endDate.replace(/-/g, '')}.pdf"`
-    }
-  });
 }
 
 // Générer un rapport Excel
@@ -407,8 +294,8 @@ async function generateExcelReport(data: any, startDate: string, endDate: string
   
   // Créer un nouveau classeur Excel
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Senator InvesTech';
-  workbook.lastModifiedBy = 'Senator InvesTech';
+  workbook.creator = APP_CONFIG.name;
+  workbook.lastModifiedBy = APP_CONFIG.name;
   workbook.created = new Date();
   workbook.modified = new Date();
   

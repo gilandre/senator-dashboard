@@ -1,348 +1,347 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import prisma from '@/lib/prisma';
+import { prisma } from '@/lib/prisma';
+import { AuthLogger } from '@/lib/security/authLogger';
 
-interface AccessData {
-  totalRecords: number;
-  dailyStats: DailyStat[];
-  weeklyStats: DailyStat[];
-  monthlyStats: DailyStat[];
-  yearlyStats: DailyStat[];
-  centralReaderStats: CentralReaderStat[];
-  groupStats: GroupStat[];
-  hourlyTraffic: HourlyTrafficStat[];
-  byGroup: GroupDayStat[];
-  byEventType: EventTypeStat[];
-}
-
-interface DailyStat {
-  date: string;
-  count: number;
-}
-
-interface CentralReaderStat {
-  central: string;
-  readers: {
-    reader: string;
-    count: number;
-  }[];
-  total: number;
-}
-
-interface GroupStat {
-  group: string;
-  count: number;
-}
-
-interface HourlyTrafficStat {
-  hour: number;
-  count: number;
-}
-
-interface GroupDayStat {
-  date: string;
-  groupName: string;
-  count: number;
-}
-
-interface EventTypeStat {
-  eventType: string;
-  rawEventType: string | null;
-  count: number;
-}
-
-async function fetchAccessData(startDate?: string, endDate?: string): Promise<AccessData> {
+/**
+ * GET /api/access-data - Récupérer les données d'accès
+ */
+export async function GET(req: NextRequest) {
   try {
-    // Si aucune date n'est fournie, on prend la date max de la table access_logs
-    let startDateTime: Date;
-    let endDateTime: Date;
-    if (!startDate || !endDate) {
-      const maxDateResult = await prisma.$queryRaw`SELECT MAX(event_date) as maxDate FROM access_logs`;
-      const maxDate = (Array.isArray(maxDateResult) && maxDateResult[0]?.maxDate) ? new Date(maxDateResult[0].maxDate) : new Date();
-      endDateTime = maxDate;
-      startDateTime = new Date(maxDate.getTime() - 7 * 24 * 60 * 60 * 1000);
-    } else {
-      startDateTime = new Date(startDate);
-      endDateTime = new Date(endDate);
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    // Vérifier si la requête a l'en-tête de bypass d'authentification pour le développement
+    const bypassAuth = req.headers.get('x-test-bypass-auth') === 'admin';
+    
+    if (!session && !bypassAuth) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
 
-    // Récupérer la répartition horaire (sans exclure les 00:00:00)
-    const hourlyTraffic = await prisma.$queryRaw`
-      SELECT 
-        HOUR(event_time) as hour,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY HOUR(event_time)
-      ORDER BY hour
-    `;
+    // Récupérer les paramètres de la requête
+    const { searchParams } = new URL(req.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const personType = searchParams.get('personType');
+    const department = searchParams.get('department');
+    const getMaxDate = searchParams.get('getMaxDate') === 'true';
+    const type = searchParams.get('type');
 
-    // Récupérer les statistiques des lecteurs par centrale
-    const centralReaderStats = await prisma.$queryRaw`
-      SELECT 
-        reader,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY reader
-      ORDER BY count DESC
-    `;
+    // Si on demande la date maximale
+    if (getMaxDate) {
+      const maxDate = await prisma.access_logs.findFirst({
+        orderBy: {
+          event_date: 'desc'
+        },
+        select: {
+          event_date: true
+        }
+      });
 
-    // Récupérer les statistiques par groupe
-    const groupStats = await prisma.$queryRaw`
-      SELECT 
-        group_name as \`group\`,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY group_name
-      ORDER BY count DESC
-    `;
-
-    // Récupérer les statistiques quotidiennes
-    const dailyStats = await prisma.$queryRaw`
-      SELECT 
-        DATE(event_date) as date,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY DATE(event_date)
-      ORDER BY date DESC
-      LIMIT 14
-    `;
-
-    // Récupérer les statistiques hebdomadaires
-    const weeklyStats = await prisma.$queryRaw`
-      SELECT 
-        CONCAT('Semaine ', WEEK(event_date)) as date,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY WEEK(event_date), CONCAT('Semaine ', WEEK(event_date))
-      ORDER BY WEEK(event_date) DESC
-      LIMIT 4
-    `;
-
-    // Récupérer les statistiques mensuelles
-    const monthlyStats = await prisma.$queryRaw`
-      SELECT 
-        DATE_FORMAT(event_date, '%b') as date,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY MONTH(event_date), DATE_FORMAT(event_date, '%b')
-      ORDER BY MONTH(event_date) DESC
-      LIMIT 12
-    `;
-
-    // Récupérer les statistiques annuelles
-    const yearlyStats = await prisma.$queryRaw`
-      SELECT 
-        YEAR(event_date) as date,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY YEAR(event_date)
-      ORDER BY YEAR(event_date) DESC
-      LIMIT 3
-    `;
-
-    // Récupérer les statistiques par groupe et par jour
-    const byGroup = await prisma.$queryRaw`
-      SELECT 
-        DATE(event_date) as date,
-        group_name as groupName,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY DATE(event_date), group_name
-      ORDER BY date DESC, group_name
-      LIMIT 35
-    `;
-
-    // Récupérer les statistiques par type d'événement
-    const byEventType = await prisma.$queryRaw`
-      SELECT 
-        event_type as eventType,
-        raw_event_type as rawEventType,
-        COUNT(*) as count
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-      GROUP BY event_type, raw_event_type
-    `;
-
-    // Calculer le nombre total d'enregistrements valides
-    const totalRecordsResult = await prisma.$queryRaw`
-      SELECT COUNT(*) as total
-      FROM access_logs
-      WHERE event_date BETWEEN ${startDateTime} AND ${endDateTime}
-      AND badge_number IS NOT NULL
-      AND event_date IS NOT NULL
-      AND event_time IS NOT NULL
-    `;
-    const totalRecords = Number((totalRecordsResult as any[])[0].total);
-
-    // Convert all BigInt counts to regular numbers
-    return {
-      totalRecords,
-      dailyStats: (dailyStats as any[]).map(stat => ({
-        date: stat.date,
-        count: Number(stat.count)
-      })),
-      weeklyStats: (weeklyStats as any[]).map(stat => ({
-        date: stat.date,
-        count: Number(stat.count)
-      })),
-      monthlyStats: (monthlyStats as any[]).map(stat => ({
-        date: stat.date,
-        count: Number(stat.count)
-      })),
-      yearlyStats: (yearlyStats as any[]).map(stat => ({
-        date: stat.date,
-        count: Number(stat.count)
-      })),
-      centralReaderStats: formatCentralReaderStats((centralReaderStats as any[]).map(stat => ({
-        reader: stat.reader,
-        count: Number(stat.count)
-      }))),
-      groupStats: (groupStats as any[]).map(stat => ({
-        group: stat.group,
-        count: Number(stat.count)
-      })),
-      hourlyTraffic: (hourlyTraffic as any[]).map(stat => ({
-        hour: Number(stat.hour),
-        count: Number(stat.count)
-      })),
-      byGroup: (byGroup as any[]).map(stat => ({
-        date: stat.date,
-        groupName: stat.groupName,
-        count: Number(stat.count)
-      })),
-      byEventType: (byEventType as any[]).map(stat => ({
-        eventType: stat.eventType,
-        rawEventType: stat.rawEventType,
-        count: Number(stat.count)
-      }))
-    };
-  } catch (error) {
-    console.error('Error fetching access data:', error);
-    throw error;
-  }
-}
-
-function formatCentralReaderStats(stats: any[]): CentralReaderStat[] {
-  const centralMap = new Map<string, CentralReaderStat>();
-
-  stats.forEach(stat => {
-    if (typeof stat.reader !== 'string' || !stat.reader.includes('_')) {
-      // On ignore ou on log les cas anormaux
-      // console.warn('Reader mal formé ou null:', stat.reader);
-      return;
-    }
-    const [central, reader] = stat.reader.split('_');
-    if (!central) return;
-    if (!centralMap.has(central)) {
-      centralMap.set(central, {
-        central,
-        readers: [],
-        total: 0
+      return NextResponse.json({
+        maxDate: maxDate?.event_date || new Date()
       });
     }
 
-    const centralStat = centralMap.get(central)!;
-    centralStat.readers.push({
-      reader,
-      count: Number(stat.count)
-    });
-    centralStat.total += Number(stat.count);
-  });
+    // Traitement des données horaires pour le graphique
+    if (type === 'hourly') {
+      try {
+        // Vérifier les dates
+        const startDateTime = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        const endDateTime = endDate ? new Date(endDate) : new Date();
 
-  return Array.from(centralMap.values());
-}
+        // Récupérer les statistiques horaires
+        const hourlyStats = await prisma.$queryRaw`
+          SELECT 
+            HOUR(event_time) as hour,
+            COUNT(*) as count
+          FROM access_logs
+          WHERE event_time IS NOT NULL 
+            AND event_date BETWEEN ${startDateTime} AND ${endDateTime}
+            ${personType ? `AND person_type = '${personType}'` : ''}
+            ${department ? `AND group_name = '${department}'` : ''}
+          GROUP BY HOUR(event_time)
+          ORDER BY hour
+        `;
 
-export async function GET(req: NextRequest) {
-  try {
-    // Bypass d'authentification pour les tests en développement
-    const bypassAuth = process.env.NODE_ENV === 'development' && 
-                      req.headers.get('x-test-bypass-auth') === 'admin';
-    
-    if (!bypassAuth) {
-      const session = await getServerSession(authOptions);
-      
-      if (!session) {
+        // Enregistrer l'activité
+        await AuthLogger.logActivity(
+          session?.user?.id || 'bypass-auth-admin',
+          'access_data_view',
+          `Consultation des données d'accès horaires du ${startDate} au ${endDate}`
+        );
+
+        return NextResponse.json({
+          hourlyTraffic: (hourlyStats as any[]).map((stat: any) => ({
+            hour: Number(stat.hour),
+            count: Number(stat.count)
+          }))
+        });
+      } catch (error) {
+        console.error('Erreur lors de la récupération des données horaires:', error);
         return NextResponse.json(
-          { error: "Non autorisé" },
-          { status: 401 }
+          { error: "Erreur lors de la récupération des données horaires" },
+          { status: 500 }
         );
       }
     }
-    
-    // Récupérer les paramètres de requête
-    const { searchParams } = new URL(req.url);
-    const getMaxDate = searchParams.get('getMaxDate') === 'true';
-    const startDate = searchParams.get('startDate') || undefined;
-    const endDate = searchParams.get('endDate') || undefined;
-    
-    if (getMaxDate) {
-      // Récupérer la date maximale des logs d'accès
-      const result = await prisma.$queryRaw<{ max_date: Date }[]>`
-        SELECT MAX(event_date) as max_date FROM access_logs
-      `;
-      
-      const maxDate = result[0]?.max_date ? new Date(result[0].max_date) : new Date();
-      
-      return NextResponse.json({ maxDate });
+
+    // Valider les dates
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: "Les dates de début et de fin sont requises" },
+        { status: 400 }
+      );
     }
-    
-    // Si des dates sont fournies ou si aucun paramètre spécifique n'est requis, récupérer les données
-    if (startDate || endDate) {
-      const data = await fetchAccessData(startDate, endDate);
-      return NextResponse.json(data);
-    }
-    
-    // Si aucun paramètre n'est fourni, utiliser les dates par défaut (30 derniers jours)
-    const defaultEndDate = new Date();
-    const defaultStartDate = new Date();
-    defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-    
-    const data = await fetchAccessData(
-      defaultStartDate.toISOString().split('T')[0], 
-      defaultEndDate.toISOString().split('T')[0]
+
+    // Construire la requête
+    const where = {
+      event_date: {
+        gte: new Date(startDate),
+        lte: new Date(endDate)
+      },
+      ...(personType && { person_type: personType }),
+      ...(department && { group_name: department })
+    };
+
+    // Récupérer les données d'accès
+    const accessLogs = await prisma.access_logs.findMany({
+      where,
+      orderBy: [
+        { event_date: 'desc' },
+        { event_time: 'desc' }
+      ]
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session?.user?.id || 'bypass-auth-admin',
+      'access_data_view',
+      `Consultation des données d'accès du ${startDate} au ${endDate}`
     );
-    
-    return NextResponse.json(data);
+
+    return NextResponse.json({ accessLogs });
   } catch (error) {
-    console.error("[API] Error fetching access data:", error);
+    console.error('Erreur lors de la récupération des données d\'accès:', error);
     return NextResponse.json(
       { error: "Erreur lors de la récupération des données d'accès" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/access-data - Enregistrer une nouvelle donnée d'accès
+ */
+export async function POST(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    // Vérifier si la requête a l'en-tête de bypass d'authentification pour le développement
+    const bypassAuth = req.headers.get('x-test-bypass-auth') === 'admin';
+    
+    if (!session && !bypassAuth) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const {
+      badgeNumber,
+      personType,
+      eventType,
+      eventDate,
+      eventTime,
+      reader,
+      groupName,
+      notes
+    } = body;
+
+    // Valider les données requises
+    if (!badgeNumber || !personType || !eventType || !eventDate || !eventTime || !reader) {
+      return NextResponse.json(
+        { error: "Tous les champs obligatoires doivent être remplis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si la personne existe
+    let person;
+    if (personType === 'employee') {
+      person = await prisma.employee.findFirst({
+        where: { badge_number: badgeNumber }
+      });
+    } else {
+      person = await prisma.visitor.findFirst({
+        where: { badge_number: badgeNumber }
+      });
+    }
+
+    if (!person) {
+      return NextResponse.json(
+        { error: `${personType === 'employee' ? 'Employé' : 'Visiteur'} non trouvé` },
+        { status: 404 }
+      );
+    }
+
+    // Créer l'enregistrement d'accès
+    const accessLog = await prisma.access_logs.create({
+      data: {
+        badge_number: badgeNumber,
+        person_type: personType,
+        event_type: eventType,
+        event_date: new Date(eventDate),
+        event_time: new Date(`${eventDate}T${eventTime}`),
+        reader,
+        group_name: groupName,
+        notes,
+        created_by: session.user.id
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session?.user?.id || 'bypass-auth-admin',
+      'access_data_create',
+      `Enregistrement d'une donnée d'accès pour ${person.name}`
+    );
+
+    return NextResponse.json({ accessLog }, { status: 201 });
+  } catch (error) {
+    console.error('Erreur lors de l\'enregistrement de la donnée d\'accès:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de l'enregistrement de la donnée d'accès" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/access-data - Mettre à jour une donnée d'accès
+ */
+export async function PUT(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    // Vérifier si la requête a l'en-tête de bypass d'authentification pour le développement
+    const bypassAuth = req.headers.get('x-test-bypass-auth') === 'admin';
+    
+    if (!session && !bypassAuth) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const {
+      id,
+      eventType,
+      eventTime,
+      reader,
+      groupName,
+      notes
+    } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID de donnée d'accès requis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si la donnée d'accès existe
+    const existingLog = await prisma.access_logs.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingLog) {
+      return NextResponse.json(
+        { error: "Donnée d'accès non trouvée" },
+        { status: 404 }
+      );
+    }
+
+    // Mettre à jour la donnée d'accès
+    const accessLog = await prisma.access_logs.update({
+      where: { id: Number(id) },
+      data: {
+        event_type: eventType,
+        event_time: eventTime ? new Date(eventTime) : undefined,
+        reader,
+        group_name: groupName,
+        notes,
+        updated_at: new Date(),
+        updated_by: session.user.id
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session?.user?.id || 'bypass-auth-admin',
+      'access_data_update',
+      `Mise à jour d'une donnée d'accès pour badge ${existingLog.badge_number}`
+    );
+
+    return NextResponse.json({ accessLog });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de la donnée d\'accès:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la mise à jour de la donnée d'accès" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/access-data - Supprimer une donnée d'accès
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    // Vérifier si la requête a l'en-tête de bypass d'authentification pour le développement
+    const bypassAuth = req.headers.get('x-test-bypass-auth') === 'admin';
+    
+    if (!session && !bypassAuth) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID de donnée d'accès requis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si la donnée d'accès existe
+    const accessLog = await prisma.access_logs.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!accessLog) {
+      return NextResponse.json(
+        { error: "Donnée d'accès non trouvée" },
+        { status: 404 }
+      );
+    }
+
+    // Supprimer la donnée d'accès
+    await prisma.access_logs.delete({
+      where: { id: Number(id) }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session?.user?.id || 'bypass-auth-admin',
+      'access_data_delete',
+      `Suppression d'une donnée d'accès pour badge ${accessLog.badge_number}`
+    );
+
+    return NextResponse.json({ message: "Donnée d'accès supprimée avec succès" });
+  } catch (error) {
+    console.error('Erreur lors de la suppression de la donnée d\'accès:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la suppression de la donnée d'accès" },
       { status: 500 }
     );
   }

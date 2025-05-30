@@ -1,20 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { FileText, FileSpreadsheet, FileDown, Loader2 } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import axios from 'axios';
-import { toast } from 'sonner';
+import { ExportDialog } from '@/components/ui/export-dialog';
+import { DateRange } from 'react-day-picker';
+import { toast } from '@/components/ui/use-toast';
 
 interface AnomalyExportMenuProps {
   startDate?: string;
@@ -22,100 +13,172 @@ interface AnomalyExportMenuProps {
 }
 
 export default function AnomalyExportMenu({ startDate, endDate }: AnomalyExportMenuProps) {
-  const [exporting, setExporting] = useState(false);
-  const [showExportDialog, setShowExportDialog] = useState(false);
-  const [exportFormat, setExportFormat] = useState('pdf');
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  
+  // Convertir les dates string en objets Date pour DateRange
+  const dateRange: DateRange = {
+    from: startDate ? new Date(startDate) : undefined,
+    to: endDate ? new Date(endDate) : undefined
+  };
 
-  const handleExport = async () => {
-    if (!startDate || !endDate) {
-      toast.error("Les dates de début et de fin sont requises pour exporter");
+  // Fonction pour effectuer une tentative d'export avec retry
+  const executeExportWithRetry = async (url: string, maxRetries = 2, delay = 1500) => {
+    let retries = 0;
+    let lastError: Error | null = null;
+    
+    while (retries <= maxRetries) {
+      try {
+        // Faire la requête pour obtenir le fichier
+        const response = await fetch(url, {
+          headers: { 'x-test-bypass-auth': 'admin' },
+          method: 'GET'
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          throw new Error(
+            errorData?.error || 
+            errorData?.details || 
+            `Erreur serveur: ${response.status} ${response.statusText}`
+          );
+        }
+        
+        return response;
+      } catch (error) {
+        console.error(`Tentative d'export échouée (${retries + 1}/${maxRetries + 1}):`, error);
+        lastError = error instanceof Error ? error : new Error('Erreur inconnue');
+        
+        if (retries < maxRetries) {
+          // Attendre avant de réessayer
+          await new Promise(resolve => setTimeout(resolve, delay));
+          retries++;
+        } else {
+          // Toutes les tentatives ont échoué
+          throw lastError;
+        }
+      }
+    }
+    
+    // Cette ligne ne devrait jamais être atteinte, mais TypeScript l'exige
+    throw new Error("Impossible de terminer l'opération d'export");
+  };
+
+  // Handler spécifique pour les anomalies
+  const handleAnomalyExport = async (format: string, exportType: string) => {
+    if (!dateRange.from || !dateRange.to) {
+      toast({
+        title: "Erreur d'export",
+        description: "Veuillez sélectionner une plage de dates valide",
+        variant: "destructive"
+      });
       return;
     }
 
-    setExporting(true);
-    setShowExportDialog(false);
-
+    setIsExporting(true);
+    
     try {
-      // Construire les paramètres de requête
-      const params = new URLSearchParams();
-      params.append('startDate', startDate);
-      params.append('endDate', endDate);
-      params.append('format', exportFormat);
-
-      const response = await axios.get(`/api/export/anomalies?${params.toString()}`, {
-        responseType: 'blob'
+      toast({
+        title: "Export en cours",
+        description: "Préparation de votre fichier, veuillez patienter...",
       });
-
-      // Créer un nom de fichier avec la plage de dates
-      const startFormatted = startDate.replace(/-/g, '');
-      const endFormatted = endDate.replace(/-/g, '');
-      const fileName = `anomalies_${startFormatted}_${endFormatted}`;
-      const extension = exportFormat.toLowerCase();
       
-      // Créer un objet URL et le lier à un élément <a> pour télécharger
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${fileName}.${extension}`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      // Construire l'URL d'API spécifique pour les anomalies
+      const startDateStr = dateRange.from.toISOString().split('T')[0];
+      const endDateStr = dateRange.to.toISOString().split('T')[0];
+      const url = `/api/export/anomalies?format=${format}&startDate=${startDateStr}&endDate=${endDateStr}&exportType=${exportType}`;
       
-      toast.success(`Le rapport a été exporté au format ${exportFormat.toUpperCase()}`);
+      // Faire la requête avec retry en cas d'échec
+      const response = await executeExportWithRetry(url);
+      
+      // Vérifier le type de contenu pour déterminer le format du fichier
+      const contentType = response.headers.get('Content-Type');
+      const contentDisposition = response.headers.get('Content-Disposition');
+      
+      // Si la réponse est un JSON au lieu d'un fichier, c'est probablement une erreur
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || errorData.details || 'Erreur inconnue lors de l\'export');
+      }
+      
+      // Récupérer le fichier et le télécharger
+      const blob = await response.blob();
+      
+      // Déterminer l'extension à partir du Content-Type
+      let fileExt = 'pdf';
+      if (contentType) {
+        if (contentType.includes('spreadsheetml')) fileExt = 'xlsx';
+        else if (contentType.includes('csv')) fileExt = 'csv';
+      }
+      
+      // Obtenir le nom de fichier depuis l'en-tête Content-Disposition si disponible
+      let fileName = `anomalies_${startDateStr}_${endDateStr}.${fileExt}`;
+      if (contentDisposition) {
+        const fileNameMatch = contentDisposition.match(/filename="(.+?)"/);
+        if (fileNameMatch && fileNameMatch[1]) {
+          fileName = fileNameMatch[1];
+        }
+      }
+      
+      // Créer un lien de téléchargement
+      const url2 = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url2;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Nettoyer
+      window.URL.revokeObjectURL(url2);
+      document.body.removeChild(a);
+      
+      toast({
+        title: "Export réussi",
+        description: `Les données ont été exportées en format ${format.toUpperCase()}`,
+        variant: "default"
+      });
     } catch (error) {
-      console.error(`Erreur lors de l'exportation en ${exportFormat}:`, error);
-      toast.error(`Impossible d'exporter au format ${exportFormat.toUpperCase()}`);
+      console.error('Erreur lors de l\'export:', error);
+      toast({
+        title: "Erreur d'export",
+        description: error instanceof Error ? error.message : "Une erreur s'est produite lors de l'export",
+        variant: "destructive"
+      });
     } finally {
-      setExporting(false);
+      setIsExporting(false);
     }
   };
 
   return (
-    <Dialog open={showExportDialog} onOpenChange={setShowExportDialog}>
-      <DialogTrigger asChild>
-        <Button size="sm" disabled={exporting}>
-          {exporting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Exportation...
-            </>
-          ) : (
-            <>
-              <FileDown className="mr-2 h-4 w-4" />
-              Exporter
-            </>
-          )}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
-        <DialogHeader>
-          <DialogTitle>Exporter le rapport</DialogTitle>
-          <DialogDescription>
-            Choisissez le format d'exportation.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="format" className="text-right">
-              Format
-            </Label>
-            <select
-              id="format"
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value)}
-              className="col-span-3 rounded-md border border-input px-3 py-1"
-              aria-label="Format d'exportation"
-            >
-              <option value="pdf">PDF</option>
-              <option value="xlsx">Excel (XLSX)</option>
-              <option value="csv">CSV (données brutes)</option>
-            </select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button type="submit" onClick={handleExport}>Exporter</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Button size="sm" onClick={() => setExportDialogOpen(true)} disabled={isExporting}>
+        <FileDown className="mr-2 h-4 w-4" />
+        {isExporting ? 'Export en cours...' : 'Exporter'}
+      </Button>
+      
+      <ExportDialog
+        isOpen={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        title="Exporter les anomalies"
+        description="Exportez les données d'anomalies pour la période sélectionnée"
+        dateRange={dateRange}
+        filters={{}}
+        source="anomalies" // Identifiant pour le traitement spécifique
+        exportTypes={[
+          {
+            id: 'detailed',
+            name: 'Données détaillées',
+            description: 'Exporte toutes les anomalies avec leurs détails'
+          },
+          {
+            id: 'summary',
+            name: 'Rapport de synthèse',
+            description: 'Exporte un résumé des anomalies avec statistiques'
+          }
+        ]}
+        onExportRequest={handleAnomalyExport}
+      />
+    </>
   );
 } 

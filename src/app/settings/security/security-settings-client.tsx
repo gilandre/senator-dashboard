@@ -475,6 +475,27 @@ export default function SecuritySettingsClient({}: SecuritySettingsClientProps) 
               </div>
               
               <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
+                <h3 className="font-medium mb-4">Mot de passe par défaut</h3>
+                
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="defaultPassword">Mot de passe par défaut</Label>
+                    <Input
+                      id="defaultPassword"
+                      type="text"
+                      className="w-64 text-right"
+                      value={settings.passwordPolicy.defaultPassword || "P@ssw0rd2025"}
+                      onChange={(e) => updateSetting('passwordPolicy', 'defaultPassword', e.target.value)}
+                      minLength={8}
+                    />
+                  </div>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Mot de passe utilisé par défaut lors de la création d'un utilisateur ou de la réinitialisation d'un mot de passe sans génération aléatoire
+                  </p>
+                </div>
+              </div>
+              
+              <div className="pt-6 border-t border-gray-200 dark:border-gray-700">
                 <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
                   <div className="flex items-start space-x-3">
                     <ShieldCheck className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
@@ -504,7 +525,7 @@ export default function SecuritySettingsClient({}: SecuritySettingsClientProps) 
             <CardFooter className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 flex justify-between">
               <div className="text-sm text-gray-500 dark:text-gray-400">
                 <RefreshCw className="h-4 w-4 inline mr-1" />
-                Dernière mise à jour: {settings.updatedAt ? new Date(settings.updatedAt).toLocaleDateString() : 'Jamais'}
+                Dernière mise à jour: {settings.updated_at ? new Date(settings.updated_at).toLocaleDateString() : 'Jamais'}
               </div>
               <Button 
                 variant="outline" 
@@ -520,7 +541,8 @@ export default function SecuritySettingsClient({}: SecuritySettingsClientProps) 
                       requireNumbers: true,
                       requireSpecialChars: true,
                       preventReuse: 5,
-                      expiryDays: 90
+                      expiryDays: 90,
+                      defaultPassword: "P@ssw0rd2025"
                     }
                   };
                   setSettings(defaultSettings as ISecuritySettings);

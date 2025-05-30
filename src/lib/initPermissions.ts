@@ -1,7 +1,28 @@
-import { connectToDatabase } from './mongodb';
-import mongoose from 'mongoose';
-import Permission from '@/models/Permission';
-import Profile from '@/models/Profile';
+import { prisma } from './prisma';
+import { defaultPermissions } from './permissions/defaults';
+
+// Définition des interfaces pour les types
+interface ResourceInfo {
+  name: string;
+  description: string;
+}
+
+interface ActionInfo {
+  name: string;
+  description: string;
+}
+
+interface RoleInfo {
+  name: string;
+  description: string;
+}
+
+interface DefaultPermissions {
+  resources: Record<string, ResourceInfo>;
+  actions: Record<string, ActionInfo>;
+  roles: Record<string, RoleInfo>;
+  permissions: Record<string, string[]>;
+}
 
 // Structure des modules et fonctions de l'application
 const appStructure = [
@@ -154,250 +175,202 @@ const defaultProfiles = [
   }
 ];
 
-// Fonction pour s'assurer que les index problématiques sont supprimés
-async function cleanupIndexes() {
-  try {
-    // Vérifier que le schéma de la collection est à jour
-    const collections = await mongoose.connection.db?.listCollections({ name: 'permissions' }).toArray();
-    
-    if (collections && collections.length > 0) {
-      // Récupérer les index existants
-      const indexes = await mongoose.connection.db?.collection('permissions').indexes();
-      
-      if (indexes) {
-        // Identifier les index problématiques
-        const problematicIndexes = indexes.filter(i => 
-          i.name === 'module_1_action_1' || 
-          (i.key && i.key.module && i.key.action));
-        
-        // Supprimer chaque index problématique
-        for (const index of problematicIndexes) {
-          if (index.name) {
-            console.log('Suppression de l\'index problématique:', index.name);
-            await mongoose.connection.db?.collection('permissions').dropIndex(index.name);
-          }
-        }
-      }
-    }
-  } catch (error) {
-    console.warn('Erreur lors de la vérification des index:', error);
-  }
-}
+// Types simplifiés pour la compatibilité
+type Resource = {
+  id: string;
+  name: string;
+  description: string;
+};
 
-// Fonction pour créer une permission
-async function createPermission(data: any, parentModule?: string) {
-  try {
-    // Vérifier si la permission existe déjà
-    const existingPermission = await Permission.findOne({ code: data.code });
+type Action = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+type Role = {
+  id: string;
+  name: string;
+  description: string;
+};
+
+type Permission = {
+  id: string;
+  roleId: string;
+  resourceId: string;
+  actionId: string;
+  conditions?: any;
+};
+
+/**
+ * Initialisation des autorisations par défaut
+ */
+export async function initializePermissions(clearExisting: boolean = false) {
+  console.log("Initialisation des permissions du système...");
+  
+  if (clearExisting) {
+    console.log("Suppression des permissions existantes...");
+    // Supprimer les permissions existantes
+    await prisma.permissions.deleteMany({});
+    await prisma.actions.deleteMany({});
+    await prisma.resources.deleteMany({});
+    console.log("Permissions existantes supprimées");
+  }
+  
+  // Créer les ressources
+  console.log("Création des ressources...");
+  const resources: Resource[] = [];
+  for (const [resourceId, resourceData] of Object.entries(defaultPermissions.resources || {})) {
+    const resource = await prisma.resources.upsert({
+      where: { id: resourceId },
+      update: {
+        name: resourceData.name || '',
+        description: resourceData.description || ''
+      },
+      create: {
+        id: resourceId,
+        name: resourceData.name || '',
+        description: resourceData.description || ''
+      }
+    });
+    resources.push(resource);
+  }
+  console.log(`${resources.length} ressources créées/mises à jour`);
+  
+  // Créer les actions
+  console.log("Création des actions...");
+  const actions: Action[] = [];
+  for (const [actionId, actionData] of Object.entries(defaultPermissions.actions || {})) {
+    const action = await prisma.actions.upsert({
+      where: { id: actionId },
+      update: {
+        name: actionData.name || '',
+        description: actionData.description || ''
+      },
+      create: {
+        id: actionId,
+        name: actionData.name || '',
+        description: actionData.description || ''
+      }
+    });
+    actions.push(action);
+  }
+  console.log(`${actions.length} actions créées/mises à jour`);
+  
+  // Créer ou mettre à jour les rôles
+  console.log("Création/mise à jour des rôles...");
+  const roles: Role[] = [];
+  for (const [roleId, roleData] of Object.entries(defaultPermissions.roles || {})) {
+    const role = await prisma.roles.upsert({
+      where: { id: roleId },
+      update: {
+        name: roleData.name || '',
+        description: roleData.description || ''
+      },
+      create: {
+        id: roleId,
+        name: roleData.name || '',
+        description: roleData.description || ''
+      }
+    });
+    roles.push(role);
+  }
+  console.log(`${roles.length} rôles créés/mis à jour`);
+  
+  // Créer les permissions
+  console.log("Attribution des permissions aux rôles...");
+  const permissions: Permission[] = [];
+  
+  // Attribuer les permissions aux rôles
+  for (const [roleId, rolePermissions] of Object.entries(defaultPermissions.permissions || {})) {
+    console.log(`Attribution de permissions au rôle ${roleId}...`);
     
-    if (existingPermission) {
-      console.log(`Permission '${data.code}' existe déjà, mise à jour...`);
+    if (!Array.isArray(rolePermissions)) continue;
+    
+    for (const permData of rolePermissions) {
+      // Format: resource.action ou resource.action|condition
+      const [actionString, conditionString] = permData.split('|');
+      const [resourceId, actionId] = actionString.split('.');
       
-      // Mettre à jour la permission existante
-      await Permission.updateOne(
-        { code: data.code },
-        { 
-          $set: {
-            name: data.name,
-            description: data.description || `Permission pour ${data.name}`,
-            isModule: data.isModule || false,
-            isFunction: !data.isModule,
-            module: data.module || (data.isModule ? data.name : parentModule || 'default'),
-            parentModule: parentModule || null,
-            view: true,
-            create: !data.isModule,
-            edit: !data.isModule,
-            delete: !data.isModule,
-            approve: false,
-            export: data.code.includes('export')
-          } 
-        }
-      );
+      if (!resourceId || !actionId) {
+        console.warn(`Format de permission invalide: ${permData}`);
+        continue;
+      }
       
-      return existingPermission;
-    } else {
-      // Créer une nouvelle permission
-      const permissionData = {
-        name: data.name,
-        code: data.code,
-        description: data.description || `Permission pour ${data.name}`,
-        isModule: data.isModule || false,
-        isFunction: !data.isModule,
-        module: data.module || (data.isModule ? data.name : parentModule || 'default'),
-        parentModule: parentModule || null,
-        view: true,
-        create: !data.isModule,
-        edit: !data.isModule,
-        delete: !data.isModule,
-        approve: false,
-        export: data.code.includes('export')
+      // Vérifier que la ressource et l'action existent
+      const resourceExists = await prisma.resources.findUnique({ where: { id: resourceId } });
+      const actionExists = await prisma.actions.findUnique({ where: { id: actionId } });
+      
+      if (!resourceExists) {
+        console.warn(`Ressource inconnue: ${resourceId}`);
+        continue;
+      }
+      
+      if (!actionExists) {
+        console.warn(`Action inconnue: ${actionId}`);
+        continue;
+      }
+      
+      // Créer la permission
+      const permissionData: any = {
+        roleId,
+        resourceId,
+        actionId
       };
       
-      const newPermission = new Permission(permissionData);
-      await newPermission.save();
-      
-      console.log(`Permission '${data.code}' créée avec succès`);
-      return newPermission;
-    }
-  } catch (error) {
-    console.error(`Erreur lors de la création/mise à jour de la permission '${data.code}':`, error);
-    throw error;
-  }
-}
-
-// Fonction pour initialiser les permissions
-export async function initializePermissions(force = false) {
-  try {
-    await connectToDatabase();
-    
-    // Nettoyer les index problématiques
-    await cleanupIndexes();
-    
-    // Récupérer les profils qui sont attribués à des utilisateurs
-    const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
-      profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile' }
-    }));
-    
-    const usersWithProfiles = await User.distinct('profileId');
-    const profileIdsInUse = usersWithProfiles.map(id => id.toString());
-    
-    // Récupérer les permissions qui sont utilisées par ces profils
-    const ProfilePermission = mongoose.models.ProfilePermission || 
-      mongoose.model('ProfilePermission', new mongoose.Schema({
-        profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile' },
-        permissionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Permission' }
-      }));
-    
-    const permissionsInUse = await (ProfilePermission as any).find({
-      profileId: { $in: profileIdsInUse }
-    }).distinct('permissionId');
-    
-    const permissionIdsInUse = permissionsInUse.map(id => id.toString());
-    console.log(`${permissionIdsInUse.length} permissions sont utilisées par des profils assignés à des utilisateurs`);
-    
-    // Si force est à true, supprimer toutes les permissions non utilisées
-    if (force) {
-      console.log('Suppression des permissions non utilisées...');
-      
-      // Récupérer toutes les permissions existantes
-      const existingPermissions = await Permission.find({});
-      
-      // Filtrer les permissions à supprimer (celles qui ne sont pas utilisées par des profils assignés à des utilisateurs)
-      const permissionsToDelete = existingPermissions.filter(permission => {
-        const permissionId = permission._id ? String(permission._id) : '';
-        return !permissionIdsInUse.includes(permissionId);
-      });
-      
-      if (permissionsToDelete.length > 0) {
-        // Archiver les permissions avant suppression
-        const PermissionArchive = mongoose.models.PermissionArchive || mongoose.model('PermissionArchive', new mongoose.Schema({
-          originalId: { type: String, required: true },
-          name: { type: String, required: true },
-          code: { type: String, required: true },
-          description: { type: String },
-          isModule: { type: Boolean },
-          isFunction: { type: Boolean },
-          module: { type: String },
-          parentModule: { type: String },
-          view: { type: Boolean },
-          create: { type: Boolean },
-          edit: { type: Boolean },
-          delete: { type: Boolean },
-          approve: { type: Boolean },
-          export: { type: Boolean },
-          archivedAt: { type: Date, default: Date.now },
-          archivedBy: { type: String, default: 'Système (Init)' },
-          originalCreatedAt: { type: Date }
-        }));
-        
-        // Archiver chaque permission
-        for (const permission of permissionsToDelete) {
-          await new PermissionArchive({
-            originalId: permission._id ? String(permission._id) : '',
-            name: permission.name,
-            code: permission.code,
-            description: permission.description,
-            isModule: permission.isModule,
-            isFunction: permission.isFunction,
-            module: permission.module,
-            parentModule: permission.parentModule,
-            view: permission.view,
-            create: permission.create,
-            edit: permission.edit,
-            delete: permission.delete,
-            approve: permission.approve,
-            export: permission.export,
-            originalCreatedAt: permission.createdAt
-          }).save();
+      if (conditionString) {
+        try {
+          permissionData.conditions = JSON.parse(conditionString);
+        } catch (error) {
+          console.warn(`Condition invalide pour ${permData}: ${error}`);
         }
-        
-        // Supprimer les permissions non utilisées
-        await Permission.deleteMany({
-          _id: { $in: permissionsToDelete.map(p => p._id) }
-        });
-        
-        console.log(`${permissionsToDelete.length} permissions non utilisées ont été supprimées et archivées`);
-      } else {
-        console.log('Aucune permission non utilisée à supprimer');
       }
       
-      // Supprimer les associations profile-permission inutilisées
-      if (mongoose.models.ProfilePermission) {
-        await (ProfilePermission as any).deleteMany({
-          permissionId: { $in: permissionsToDelete.map(p => p._id) },
-          profileId: { $nin: profileIdsInUse }
-        });
-      }
-    }
-    
-    console.log('Initialisation des permissions...');
-    
-    // 1. Créer les permissions pour les modules et fonctions
-    for (const moduleItem of appStructure) {
-      // Créer la permission pour le module parent
-      await createPermission({
-        name: moduleItem.name,
-        code: moduleItem.code,
-        isModule: true,
-        description: `Module ${moduleItem.name}`
+      // Vérifier si la permission existe déjà
+      const existingPermission = await prisma.permissions.findFirst({
+        where: {
+          roleId,
+          resourceId,
+          actionId
+        }
       });
       
-      // Créer les fonctions associées
-      for (const func of moduleItem.functions) {
-        const funcPermission = await createPermission({
-          name: func.name,
-          code: func.code,
-          description: func.description,
-          module: moduleItem.name
-        }, moduleItem.name);
-        
-        // Traiter les sous-fonctions si elles existent
-        if (func.subFunctions && Array.isArray(func.subFunctions)) {
-          for (const subFunc of func.subFunctions) {
-            await createPermission({
-              name: subFunc.name,
-              code: subFunc.code,
-              description: subFunc.description,
-              module: moduleItem.name
-            }, moduleItem.name);
+      if (existingPermission) {
+        // Mettre à jour la permission existante
+        const permission = await prisma.permissions.update({
+          where: { id: existingPermission.id },
+          data: {
+            conditions: permissionData.conditions
           }
-        }
+        });
+        permissions.push(permission);
+      } else {
+        // Créer une nouvelle permission
+        const permission = await prisma.permissions.create({
+          data: permissionData
+        });
+        permissions.push(permission);
       }
     }
-    
-    console.log('Initialisation des permissions terminée avec succès');
-    return { success: true };
-  } catch (error) {
-    console.error('Erreur lors de l\'initialisation des permissions:', error);
-    return { success: false, error };
   }
+  
+  console.log(`${permissions.length} permissions créées/mises à jour`);
+  console.log("Initialisation des permissions terminée");
+  
+  return {
+    resources,
+    actions,
+    roles,
+    permissions,
+    success: true
+  };
 }
 
 // Fonction pour définir les habilitations d'un profil
 async function setProfilePermissions(profileId: string, permissionsConfig: any) {
   try {
-    // Récupérer toutes les permissions
-    const allPermissions = await Permission.find({});
+    // Récupérer toutes les permissions depuis Prisma
+    const allPermissions = await prisma.app_permissions.findMany({});
     const permissionsByCode: {[key: string]: any} = {};
     
     // Créer un dictionnaire de permissions par code
@@ -405,34 +378,19 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
       permissionsByCode[perm.code] = perm;
     });
     
-    // Créer une collection ProfilePermission si elle n'existe pas déjà
-    const ProfilePermission = mongoose.models.ProfilePermission || 
-      mongoose.model('ProfilePermission', new mongoose.Schema({
-        profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile', required: true },
-        permissionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Permission', required: true },
-        view: { type: Boolean, default: false },
-        create: { type: Boolean, default: false },
-        edit: { type: Boolean, default: false },
-        delete: { type: Boolean, default: false },
-        approve: { type: Boolean, default: false },
-        export: { type: Boolean, default: false },
-        level: { type: String, enum: ['Complet', 'Écriture', 'Lecture', 'Aucun'], default: 'Aucun' }
-      }, { timestamps: true }));
+    // Supprimer les anciennes permissions du profil
+    await prisma.profile_permissions.deleteMany({
+      where: { profileId: parseInt(profileId) }
+    });
     
-    // Indexation pour éviter les doublons
-    if (!ProfilePermission.schema.indexes().some(idx => 
-      idx[0].profileId && idx[0].permissionId && idx[1] && idx[1].unique)) {
-      ProfilePermission.schema.index({ profileId: 1, permissionId: 1 }, { unique: true });
-    }
-    
-    // Traiter chaque permission
+    // Tableau pour stocker les permissions à traiter
     const permissionsToProcess: any[] = [];
     
     // Si "all" est défini, appliquer à toutes les permissions
     if (permissionsConfig.all) {
       allPermissions.forEach(perm => {
         permissionsToProcess.push({
-          permId: perm._id,
+          permId: perm.id,
           level: permissionsConfig.all
         });
       });
@@ -443,7 +401,7 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
           // Si le code correspond à une permission, l'ajouter
           if (permissionsByCode[code]) {
             permissionsToProcess.push({
-              permId: permissionsByCode[code]._id,
+              permId: permissionsByCode[code].id,
               level: levelConfig
             });
             
@@ -453,7 +411,7 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
               
             moduleFunctions.forEach(func => {
               permissionsToProcess.push({
-                permId: func._id,
+                permId: func.id,
                 level: levelConfig
               });
             });
@@ -466,7 +424,7 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
           // Si le code correspond à un module, appliquer le niveau par défaut
           if (permissionsByCode[code] && permissionsByCode[code].isModule) {
             permissionsToProcess.push({
-              permId: permissionsByCode[code]._id,
+              permId: permissionsByCode[code].id,
               level: defaultLevel
             });
             
@@ -478,7 +436,7 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
             moduleFunctions.forEach(func => {
               const funcLevel = configObj[func.code] || defaultLevel;
               permissionsToProcess.push({
-                permId: func._id,
+                permId: func.id,
                 level: funcLevel
               });
             });
@@ -488,7 +446,7 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
           for (const [funcCode, funcLevel] of Object.entries(configObj)) {
             if (funcCode !== 'default' && permissionsByCode[funcCode]) {
               permissionsToProcess.push({
-                permId: permissionsByCode[funcCode]._id,
+                permId: permissionsByCode[funcCode].id,
                 level: funcLevel
               });
             }
@@ -496,9 +454,6 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
         }
       }
     }
-    
-    // Maintenant, supprimer les anciennes permissions du profil
-    await (ProfilePermission as any).deleteMany({ profileId });
     
     // Créer des permissions avec les bons niveaux
     for (const { permId, level } of permissionsToProcess) {
@@ -513,12 +468,14 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
         level
       };
       
-      // Créer ou mettre à jour la permission du profil
-      await (ProfilePermission as any).findOneAndUpdate(
-        { profileId, permissionId: permId },
-        { $set: { ...permissionRights } },
-        { upsert: true, new: true }
-      );
+      // Créer une nouvelle permission de profil
+      await prisma.profile_permissions.create({
+        data: {
+          profileId: parseInt(profileId),
+          permissionId: permId,
+          ...permissionRights
+        }
+      });
     }
     
     return { success: true };
@@ -531,15 +488,22 @@ async function setProfilePermissions(profileId: string, permissionsConfig: any) 
 // Fonction pour initialiser les profils
 export async function initializeProfiles(force = false) {
   try {
-    await connectToDatabase();
-    
     // Récupérer la liste des profils qui sont attribués à des utilisateurs
-    const User = mongoose.models.User || mongoose.model('User', new mongoose.Schema({
-      profileId: { type: mongoose.Schema.Types.ObjectId, ref: 'Profile' }
-    }));
+    const usersWithProfiles = await prisma.users.findMany({
+      where: {
+        profileId: {
+          not: null
+        }
+      },
+      distinct: ['profileId'],
+      select: {
+        profileId: true
+      }
+    });
     
-    const usersWithProfiles = await User.distinct('profileId');
-    const profileIdsInUse = usersWithProfiles.map(id => id.toString());
+    const profileIdsInUse = usersWithProfiles
+      .map(user => user.profileId)
+      .filter(id => id !== null) as number[];
     
     console.log(`${profileIdsInUse.length} profils sont actuellement utilisés par des utilisateurs`);
     
@@ -548,59 +512,53 @@ export async function initializeProfiles(force = false) {
       console.log('Suppression des profils non utilisés...');
       
       // Récupérer tous les profils existants
-      const existingProfiles = await Profile.find({});
+      const existingProfiles = await prisma.profiles.findMany();
       
       // Filtrer les profils à supprimer (ceux qui ne sont pas utilisés)
-      const profilesToDelete = existingProfiles.filter(profile => {
-        const profileId = profile._id ? String(profile._id) : '';
-        return !profileIdsInUse.includes(profileId);
-      });
+      const profilesToDelete = existingProfiles.filter(profile => 
+        !profileIdsInUse.includes(profile.id)
+      );
       
       if (profilesToDelete.length > 0) {
         // Archiver les profils avant suppression
-        const ProfileArchive = mongoose.models.ProfileArchive || mongoose.model('ProfileArchive', new mongoose.Schema({
-          originalId: { type: String, required: true },
-          name: { type: String, required: true },
-          description: { type: String },
-          accessLevel: { type: String },
-          status: { type: String },
-          isAdmin: { type: Boolean },
-          isDefault: { type: Boolean },
-          archivedAt: { type: Date, default: Date.now },
-          archivedBy: { type: String, default: 'Système (Init)' },
-          originalCreatedAt: { type: Date }
-        }));
-        
-        // Archiver chaque profil
         for (const profile of profilesToDelete) {
-          const profileData = {
-            name: profile.name,
-            description: profile.description,
-            accessLevel: (profile as any).accessLevel,
-            status: (profile as any).status,
-            isAdmin: (profile as any).isAdmin,
-            isDefault: (profile as any).isDefault,
-            originalCreatedAt: profile.createdAt
-          };
-          
-          await new ProfileArchive(profileData).save();
+          await prisma.profile_archives.create({
+            data: {
+              originalId: profile.id.toString(),
+              name: profile.name,
+              description: profile.description || '',
+              accessLevel: profile.accessLevel || '',
+              status: profile.status || '',
+              isAdmin: profile.isAdmin || false,
+              isDefault: profile.isDefault || false,
+              archivedAt: new Date(),
+              archivedBy: 'Système (Init)',
+              originalCreatedAt: profile.createdAt || new Date()
+            }
+          });
         }
         
-        // Supprimer les profils non utilisés
-        await Profile.deleteMany({ 
-          _id: { $in: profilesToDelete.map(p => p._id) } 
+        // Supprimer les permissions associées
+        await prisma.profile_permissions.deleteMany({
+          where: {
+            profileId: {
+              in: profilesToDelete.map(p => p.id)
+            }
+          }
+        });
+        
+        // Supprimer les profils
+        await prisma.profiles.deleteMany({
+          where: {
+            id: {
+              in: profilesToDelete.map(p => p.id)
+            }
+          }
         });
         
         console.log(`${profilesToDelete.length} profils non utilisés ont été supprimés et archivés`);
       } else {
         console.log('Aucun profil non utilisé à supprimer');
-      }
-      
-      // Supprimer les permissions de profils pour les profils supprimés
-      if (mongoose.models.ProfilePermission) {
-        await (mongoose.models.ProfilePermission as any).deleteMany({
-          profileId: { $in: profilesToDelete.map(p => p._id) }
-        });
       }
     }
     
@@ -609,27 +567,29 @@ export async function initializeProfiles(force = false) {
     // Traiter chaque profil par défaut
     for (const profileData of defaultProfiles) {
       // Vérifier si le profil existe déjà
-      let profile = await Profile.findOne({ name: profileData.name });
+      let profile = await prisma.profiles.findFirst({
+        where: { name: profileData.name }
+      });
       
       if (!profile) {
         // Créer le profil s'il n'existe pas
-        profile = new Profile({
-          name: profileData.name,
-          description: profileData.description,
-          isAdmin: profileData.isAdmin,
-          isDefault: profileData.name === 'Administrateur', // Le profil Administrateur est le profil par défaut
-          accessLevel: profileData.accessLevel,
-          status: profileData.status
+        profile = await prisma.profiles.create({
+          data: {
+            name: profileData.name,
+            description: profileData.description,
+            isAdmin: profileData.isAdmin,
+            isDefault: profileData.name === 'Administrateur', // Le profil Administrateur est le profil par défaut
+            accessLevel: profileData.accessLevel,
+            status: profileData.status
+          }
         });
-        
-        await profile.save();
         console.log(`Profil '${profileData.name}' créé avec succès`);
       } else {
         console.log(`Profil '${profileData.name}' existe déjà`);
       }
       
       // Définir les habilitations pour ce profil
-      await setProfilePermissions(String(profile._id), profileData.permissions);
+      await setProfilePermissions(String(profile.id), profileData.permissions);
     }
     
     console.log('Initialisation des profils terminée avec succès');

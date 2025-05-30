@@ -148,4 +148,74 @@ export class AuthLogger {
       return null;
     }
   }
+
+  /**
+   * Enregistre une activité utilisateur
+   */
+  static async logActivity(
+    userId: string | number,
+    action: string,
+    resource: string,
+    details?: any
+  ): Promise<void>;
+
+  /**
+   * Surcharge pour accepter un objet d'activité
+   */
+  static async logActivity(
+    actionType: string,
+    data: {
+      userId: string | number;
+      targetUserId?: string | number;
+      action?: string;
+      details?: any;
+    }
+  ): Promise<void>;
+
+  /**
+   * Implémentation de logActivity
+   */
+  static async logActivity(...args: any[]): Promise<void> {
+    try {
+      let userId: string | number;
+      let action: string;
+      let resource: string = '';
+      let details: any = {};
+
+      // Détecter quelle surcharge est utilisée
+      if (args.length >= 3 && (typeof args[0] === 'string' || typeof args[0] === 'number')) {
+        // Format: (userId, action, resource, details?)
+        userId = args[0];
+        action = args[1];
+        resource = args[2];
+        details = args[3] || {};
+      } else if (args.length === 2 && typeof args[0] === 'string' && typeof args[1] === 'object') {
+        // Format: (actionType, { userId, targetUserId?, action?, details? })
+        action = args[0];
+        userId = args[1].userId;
+        resource = args[1].targetUserId ? `users/${args[1].targetUserId}` : '';
+        details = args[1].details || {};
+      } else {
+        console.error('Format d\'appel incorrect pour logActivity');
+        return;
+      }
+      
+      const userIdNum = typeof userId === 'string' ? parseInt(userId) : userId;
+      
+      // Journalisation en console pour un débogage immédiat
+      console.log(`[ACTIVITY] ${new Date().toISOString()} - User ID: ${userIdNum} - ${action} - ${resource}`);
+      
+      // Enregistrer dans la base de données
+      await prisma.user_activities.create({
+        data: {
+          user_id: userIdNum,
+          action: action,
+          details: typeof details === 'string' ? details : JSON.stringify(details),
+          timestamp: new Date()
+        }
+      });
+    } catch (error) {
+      console.error('Erreur lors de la journalisation d\'activité:', error);
+    }
+  }
 } 

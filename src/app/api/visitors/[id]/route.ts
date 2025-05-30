@@ -39,9 +39,7 @@ export async function GET(
       first_seen: visitor.first_seen,
       last_seen: visitor.last_seen,
       created_at: visitor.created_at,
-      updated_at: visitor.updated_at,
-      firstName: visitor.first_name, // Pour la compatibilité avec les composants existants
-      lastName: visitor.last_name     // Pour la compatibilité avec les composants existants
+      updated_at: visitor.updated_at
     });
   } catch (error) {
     console.error('Error retrieving visitor:', error);

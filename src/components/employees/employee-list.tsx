@@ -255,10 +255,13 @@ export function EmployeeList() {
                   setLoading(true);
                   const response = await axios.post('/api/batch/import-employees');
                   if (response.status === 200) {
-                    const stats = response.data.stats;
+                    // Utiliser les propriétés réellement disponibles dans la réponse
+                    const employeesAdded = response.data.employeesAdded || 0;
+                    const visitorsPurged = response.data.visitorsPurged || 0;
+                    
                     toast({
                       title: "Importation réussie",
-                      description: `${stats.created} employés créés, ${stats.skipped} ignorés, ${stats.errors} erreurs. Durée: ${stats.duration}`,
+                      description: `${employeesAdded} nouveaux employés importés. ${visitorsPurged > 0 ? `${visitorsPurged} visiteurs purgés de la table employés.` : ''}`,
                     });
                     fetchEmployees();
                   }

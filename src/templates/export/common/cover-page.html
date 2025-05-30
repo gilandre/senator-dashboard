@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    .cover-page {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      width: 100%;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      color: #333333;
+      page-break-after: always;
+    }
+    
+    .cover-logo {
+      width: 200px;
+      margin-bottom: 40px;
+    }
+    
+    .cover-title {
+      font-size: 28px;
+      font-weight: bold;
+      color: #0078D4;
+      margin-bottom: 15px;
+    }
+    
+    .cover-subtitle {
+      font-size: 22px;
+      margin-bottom: 30px;
+    }
+    
+    .cover-date {
+      font-size: 16px;
+      margin-bottom: 50px;
+    }
+    
+    .cover-footer {
+      font-size: 12px;
+      color: #666;
+      margin-top: 50px;
+      position: absolute;
+      bottom: 20px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="cover-page">
+    <img src="{{logoUrl}}" alt="{{appName}}" class="cover-logo">
+    
+    <h1 class="cover-title">{{appName}}</h1>
+    
+    <h2 class="cover-subtitle">{{reportTitle}}</h2>
+    
+    <p class="cover-date">Période du {{formattedStartDate}} au {{formattedEndDate}}</p>
+    
+    <div class="cover-footer">
+      <p>Généré le {{generationDate}}</p>
+      <p>{{appName}} &copy; {{currentYear}}</p>
+    </div>
+  </div>
+</body>
+</html> 

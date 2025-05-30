@@ -1,7 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   images: {
     domains: ['localhost', 'randomuser.me'],
   },
@@ -29,8 +28,12 @@ const nextConfig = {
     ]
   },
   experimental: {
-    serverComponentsExternalPackages: ['mongoose', 'bcryptjs'],
+    serverActions: {
+      // Configuration d'actions serveur en tant qu'objet
+      allowedOrigins: ['localhost:3010'],
+    },
   },
-}
+  serverExternalPackages: ['mongoose', 'bcryptjs']
+};
 
-module.exports = nextConfig 
+module.exports = nextConfig;

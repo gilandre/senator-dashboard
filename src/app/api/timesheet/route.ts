@@ -9,11 +9,11 @@ const createTimesheetEntrySchema = z.object({
   date: z.string().refine(value => !isNaN(Date.parse(value)), {
     message: "Date invalide"
   }),
-  start_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: "Format d'heure invalide (HH:MM)"
+  start_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, {
+    message: "Format horaire invalide (HH:MM ou HH:MM:SS requis)"
   }),
-  end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: "Format d'heure invalide (HH:MM)"
+  end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/, {
+    message: "Format horaire invalide (HH:MM ou HH:MM:SS requis)"
   }),
   break_duration: z.number().min(0).optional(),
   activity_type: z.string(),
@@ -28,11 +28,11 @@ const updateTimesheetEntrySchema = z.object({
   date: z.string().refine(value => !isNaN(Date.parse(value)), {
     message: "Date invalide"
   }).optional(),
-  start_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: "Format d'heure invalide (HH:MM)"
+  start_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/, {
+    message: "Format d'heure invalide (HH:MM:SS)"
   }).optional(),
-  end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: "Format d'heure invalide (HH:MM)"
+  end_time: z.string().regex(/^([01]\d|2[0-3]):([0-5]\d):([0-5]\d)$/, {
+    message: "Format d'heure invalide (HH:MM:SS)"
   }).optional(),
   break_duration: z.number().min(0).optional(),
   activity_type: z.string().optional(),
@@ -408,4 +408,4 @@ export async function PATCH(req: NextRequest) {
       { status: 500 }
     );
   }
-} 
+}

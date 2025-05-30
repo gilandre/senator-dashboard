@@ -1,42 +1,10 @@
 generator client {
   provider = "prisma-client-js"
-  output   = "./generated/client"
 }
 
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
-}
-
-model User {
-  id                                                       Int                 @id @default(autoincrement())
-  name                                                     String              @db.VarChar(255)
-  email                                                    String              @unique(map: "email") @db.VarChar(255)
-  password                                                 String              @db.VarChar(255)
-  role                                                     users_role          @default(user)
-  first_login                                              Boolean?            @default(true)
-  created_at                                               DateTime?           @default(now()) @db.Timestamp(0)
-  updated_at                                               DateTime?           @default(now()) @db.Timestamp(0)
-  password_expiry_date                                     DateTime?
-  password_reset_expires                                   DateTime?
-  password_reset_token                                     String?
-  status                                                   users_status        @default(active)
-  anomalies                                                anomalies[]
-  attendance_config                                        attendance_config[]
-  holidays                                                 holidays[]
-  password_history                                         password_history[]
-  report_histories                                         report_history[]
-  report_schedules                                         report_schedule[]
-  report_templates                                         report_templates[]
-  security_incidents                                       SecurityIncident[]
-  security_incidents_security_incidents_resolved_byTousers SecurityIncident[]  @relation("security_incidents_resolved_byTousers")
-  security_settings                                        security_settings[]
-  timesheetEntries                                         timesheet_entry[]
-  user_activities                                          user_activities[]
-  user_profiles                                            UserProfile[]
-
-  @@index([email], map: "idx_email")
-  @@map("users")
 }
 
 model Profile {
@@ -54,7 +22,7 @@ model Profile {
 model UserProfile {
   user_id    Int     @map("user_id")
   profile_id Int     @map("profile_id")
-  user       User    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profiles_ibfk_1")
+  user       users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profiles_ibfk_1")
   profile    Profile @relation(fields: [profile_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "user_profiles_ibfk_2")
 
   @@id([user_id, profile_id])
@@ -96,8 +64,8 @@ model SecurityIncident {
   occurred_at                                 DateTime?                  @default(now()) @db.Timestamp(0)
   resolved_at                                 DateTime?                  @db.Timestamp(0)
   resolved_by                                 Int?
-  user                                        User?                      @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_1")
-  users_security_incidents_resolved_byTousers User?                      @relation("security_incidents_resolved_byTousers", fields: [resolved_by], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_2")
+  user                                        users?                     @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_1")
+  users_security_incidents_resolved_byTousers users?                     @relation("security_incidents_resolved_byTousers", fields: [resolved_by], references: [id], onUpdate: NoAction, map: "security_incidents_ibfk_2")
 
   @@index([resolved_by], map: "resolved_by")
   @@index([user_id], map: "user_id")
@@ -153,7 +121,7 @@ model anomalies {
   detected_at  DateTime?           @default(now()) @db.Timestamp(0)
   resolved_at  DateTime?           @db.Timestamp(0)
   resolved_by  Int?
-  users        User?               @relation(fields: [resolved_by], references: [id], onUpdate: NoAction, map: "anomalies_ibfk_1")
+  users        users?              @relation(fields: [resolved_by], references: [id], onUpdate: NoAction, map: "anomalies_ibfk_1")
 
   @@index([resolved_by], map: "resolved_by")
 }
@@ -167,7 +135,7 @@ model attendance_config {
   work_days        String?   @default("1,2,3,4,5") @db.VarChar(20)
   updated_at       DateTime? @default(now()) @db.Timestamp(0)
   updated_by       Int?
-  users            User?     @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "attendance_config_ibfk_1")
+  users            users?    @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "attendance_config_ibfk_1")
 
   @@index([updated_by], map: "updated_by")
 }
@@ -193,6 +161,7 @@ model attendance_parameters {
   last_updated              DateTime?                                 @default(now()) @db.Timestamp(0)
   updated_by                String?                                   @default("system") @db.VarChar(100)
   working_days              String?                                   @default("1,2,3,4,5") @db.VarChar(20)
+  continuous_days           String?                                   @default("") @db.VarChar(20)
 }
 
 model departments {
@@ -235,11 +204,11 @@ model holidays {
   date           DateTime  @unique @db.Date
   name           String    @db.VarChar(255)
   description    String?   @db.Text
-  type           String    @default("legal") @db.VarChar(50)
-  repeats_yearly Boolean   @default(false)
   created_at     DateTime? @default(now()) @db.Timestamp(0)
   created_by     Int?
-  users          User?     @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "holidays_ibfk_1")
+  repeats_yearly Boolean   @default(false)
+  type           String    @default("legal") @db.VarChar(50)
+  users          users?    @relation(fields: [created_by], references: [id], onUpdate: NoAction, map: "holidays_ibfk_1")
 
   @@index([created_by], map: "created_by")
   @@map("holidays")
@@ -259,7 +228,7 @@ model password_history {
   user_id    Int
   password   String    @db.VarChar(255)
   created_at DateTime? @default(now()) @db.Timestamp(0)
-  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "password_history_ibfk_1")
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "password_history_ibfk_1")
 
   @@index([user_id], map: "user_id")
 }
@@ -285,6 +254,7 @@ model roles {
   created_at       DateTime?          @default(now()) @db.Timestamp(0)
   updated_at       DateTime?          @default(now()) @db.Timestamp(0)
   role_permissions role_permissions[]
+  users            users[]
 
   @@index([is_active], map: "idx_is_active")
   @@index([name], map: "idx_name")
@@ -302,7 +272,10 @@ model security_settings {
   two_factor_auth_enabled Boolean?  @default(false)
   updated_at              DateTime? @default(now()) @db.Timestamp(0)
   updated_by              Int?
-  users                   User?     @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "security_settings_ibfk_1")
+  temp_password_length    Int?      @default(16) @db.Int
+  temp_password_expiry_hours Int?   @default(24) @db.Int
+  role_password_policies  String?   @db.Text
+  users                   users?    @relation(fields: [updated_by], references: [id], onUpdate: NoAction, map: "security_settings_ibfk_1")
 
   @@index([updated_by], map: "updated_by")
 }
@@ -314,7 +287,7 @@ model user_activities {
   details    String?   @db.Text
   ip_address String?   @db.VarChar(45)
   timestamp  DateTime? @default(now()) @db.Timestamp(0)
-  users      User?     @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "user_activities_ibfk_1")
+  users      users?    @relation(fields: [user_id], references: [id], onUpdate: NoAction, map: "user_activities_ibfk_1")
 
   @@index([user_id], map: "user_id")
 }
@@ -368,7 +341,7 @@ model timesheet_entry {
   updated_at     DateTime @updatedAt
   project        project? @relation(fields: [project_id], references: [id])
   task           task?    @relation(fields: [task_id], references: [id])
-  user           User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user           users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([project_id])
@@ -453,7 +426,7 @@ model report_templates {
   created_by  Int?
   created_at  DateTime @default(now()) @db.Timestamp(0)
   updated_at  DateTime @updatedAt
-  user        User?    @relation(fields: [created_by], references: [id])
+  user        users?   @relation(fields: [created_by], references: [id])
   report      reports  @relation(fields: [report_id], references: [id], onDelete: Cascade)
 
   @@index([report_id], map: "idx_report_id")
@@ -477,7 +450,7 @@ model report_history {
   error_message    String?   @db.Text
   scheduled_report Int?
   report           reports   @relation(fields: [report_id], references: [id])
-  user             User?     @relation(fields: [user_id], references: [id])
+  user             users?    @relation(fields: [user_id], references: [id])
 
   @@index([report_id], map: "idx_report_id")
   @@index([user_id], map: "idx_user_id")
@@ -500,7 +473,7 @@ model report_schedule {
   updated_at DateTime  @updatedAt
   last_run   DateTime? @db.Timestamp(0)
   next_run   DateTime? @db.Timestamp(0)
-  user       User?     @relation(fields: [created_by], references: [id])
+  user       users?    @relation(fields: [created_by], references: [id])
   report     reports   @relation(fields: [report_id], references: [id], onDelete: Cascade)
 
   @@index([report_id], map: "idx_report_id")
@@ -518,6 +491,88 @@ model group_name {
   updated_at      DateTime? @updatedAt
 
   @@index([name], map: "idx_group_name")
+}
+
+model users {
+  id                                                       Int                 @id @default(autoincrement())
+  name                                                     String              @db.VarChar(255)
+  email                                                    String              @unique(map: "email") @db.VarChar(255)
+  password                                                 String              @db.VarChar(255)
+  role                                                     users_role          @default(user)
+  first_login                                              Boolean?            @default(true)
+  created_at                                               DateTime?           @default(now()) @db.Timestamp(0)
+  updated_at                                               DateTime?           @default(now()) @db.Timestamp(0)
+  password_expiry_date                                     DateTime?
+  password_reset_expires                                   DateTime?
+  password_reset_token                                     String?
+  status                                                   users_status        @default(active)
+  role_id                                                  Int?                @map("role_id")
+  status_id                                                Int?
+  anomalies                                                anomalies[]
+  attendance_config                                        attendance_config[]
+  holidays                                                 holidays[]
+  password_history                                         password_history[]
+  report_histories                                         report_history[]
+  report_schedules                                         report_schedule[]
+  report_templates                                         report_templates[]
+  security_incidents                                       SecurityIncident[]
+  security_incidents_security_incidents_resolved_byTousers SecurityIncident[]  @relation("security_incidents_resolved_byTousers")
+  security_settings                                        security_settings[]
+  timesheetEntries                                         timesheet_entry[]
+  ui_settings                                              ui_settings[]
+  user_activities                                          user_activities[]
+  user_profiles                                            UserProfile[]
+  role_relation                                            roles?              @relation(fields: [role_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_role_relation_fkey")
+  status_relation                                          reference_data?     @relation("users_status_relation", fields: [status_id], references: [id], onDelete: SetNull, onUpdate: Cascade, map: "users_status_relation_fkey")
+
+  @@index([status_id], map: "users_status_id_fkey")
+  @@index([email], map: "idx_email")
+  @@index([role_id], map: "users_role_relation_fkey")
+}
+
+model ui_settings {
+  id         Int       @id @default(autoincrement())
+  user_id    Int?
+  key        String    @db.VarChar(255)
+  value      String    @db.Text
+  type       String    @default("string") @db.VarChar(50)
+  scope      String    @default("global") @db.VarChar(50)
+  module     String?   @db.VarChar(100)
+  created_at DateTime? @default(now()) @db.Timestamp(0)
+  updated_at DateTime? @default(now()) @db.Timestamp(0)
+  users      users?    @relation(fields: [user_id], references: [id])
+
+  @@unique([user_id, key, scope, module], name: "unique_setting", map: "unique_setting")
+  @@index([key], map: "idx_key")
+  @@index([user_id], map: "idx_user_id")
+  @@index([scope], map: "idx_scope")
+  @@index([module], map: "idx_module")
+  @@map("ui_settings")
+}
+
+model reference_data {
+  id           Int       @id @default(autoincrement())
+  code         String    @db.VarChar(100)
+  value        String    @db.VarChar(255)
+  display_name String    @db.VarChar(255)
+  description  String?   @db.Text
+  type         String    @db.VarChar(100)
+  module       String    @db.VarChar(100)
+  feature      String?   @db.VarChar(100)
+  is_active    Boolean   @default(true)
+  sort_order   Int       @default(0)
+  color_code   String?   @db.VarChar(50)
+  icon_name    String?   @db.VarChar(100)
+  created_at   DateTime? @default(now()) @db.Timestamp(0)
+  updated_at   DateTime? @default(now()) @db.Timestamp(0)
+  users_status users[]   @relation("users_status_relation")
+
+  @@unique([type, code, module], name: "type_code_module", map: "type_code_module")
+  @@index([type], map: "idx_ref_type")
+  @@index([module], map: "idx_ref_module")
+  @@index([type, module], map: "idx_ref_type_module")
+  @@index([code], map: "idx_ref_code")
+  @@map("reference_data")
 }
 
 enum access_logs_person_type {
@@ -546,13 +601,6 @@ enum anomalies_status {
   investigating
   resolved
   dismissed
-}
-
-enum users_role {
-  admin
-  operator
-  viewer
-  user
 }
 
 enum security_incidents_status {
@@ -584,12 +632,6 @@ enum attendance_parameters_rounding_direction {
   up
   down
   nearest
-}
-
-enum users_status {
-  active
-  inactive
-  suspended
 }
 
 enum access_logs_event_type {
@@ -651,4 +693,17 @@ enum access_logs_event_type {
   door_unlocked_by_guest
   door_locked_by_other
   door_unlocked_by_other
+}
+
+enum users_role {
+  admin
+  operator
+  viewer
+  user
+}
+
+enum users_status {
+  active
+  inactive
+  suspended
 }

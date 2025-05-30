@@ -1,0 +1,88 @@
+/* Styles communs pour tous les exports PDF */
+body {
+  font-family: 'Roboto', 'Arial', sans-serif;
+  margin: 30px;
+  color: #333;
+  line-height: 1.4;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 30px;
+  border-bottom: 2px solid #2563eb;
+  padding-bottom: 15px;
+}
+
+.header h1 {
+  color: #2563eb;
+  margin-bottom: 5px;
+}
+
+.header .logo {
+  max-width: 150px;
+  margin-bottom: 15px;
+}
+
+.header .date-range {
+  font-style: italic;
+  color: #555;
+}
+
+.summary {
+  margin-bottom: 30px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+  border-left: 4px solid #2563eb;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+th, td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  text-align: left;
+}
+
+th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+.chart-container {
+  text-align: center;
+  margin: 20px 0;
+}
+
+.chart-container img {
+  max-width: 100%;
+  height: auto;
+}
+
+.footer {
+  text-align: center;
+  font-size: 12px;
+  margin-top: 30px;
+  color: #666;
+  border-top: 1px solid #ddd;
+  padding-top: 10px;
+}
+
+.footer .page-number:after {
+  content: counter(page);
+}
+
+.note {
+  font-style: italic;
+  color: #666;
+  font-size: 0.9em;
+  margin-top: 10px;
+} 

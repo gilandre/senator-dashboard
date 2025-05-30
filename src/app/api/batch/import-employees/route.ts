@@ -20,159 +20,110 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Permissions insuffisantes' }, { status: 403 });
     }
 
-    // Démarrer l'importation
-    console.log('Démarrage de l\'importation des employés depuis les logs d\'accès...');
+    console.log('Démarrage de l\'importation des employés...');
     
-    const startTime = Date.now();
+    // 1. PURGER LES VISITEURS DE LA TABLE EMPLOYEES
+    // Récupérer tous les badges de la table visiteurs
+    const visitorBadges = await prisma.visitors.findMany({
+      select: { badge_number: true }
+    });
     
-    // 1. Récupérer tous les logs d'accès avec person_type = 'employee' et qui ont un nom complet
-    const uniqueEmployeeLogs = await prisma.access_logs.findMany({
+    const visitorBadgeNumbers = visitorBadges.map(v => v.badge_number);
+    
+    // Supprimer tous les employés dont le badge_number correspond à un visiteur
+    if (visitorBadgeNumbers.length > 0) {
+      const purgeResult = await prisma.employees.deleteMany({
+        where: {
+          badge_number: {
+            in: visitorBadgeNumbers
+          }
+        }
+      });
+      
+      console.log(`Purge des visiteurs de la table employees: ${purgeResult.count} entrées supprimées`);
+    }
+    
+    // 2. Récupérer tous les logs d'accès avec person_type = 'employee'
+    console.log('Récupération des logs avec person_type = employee...');
+    const accessLogs = await prisma.access_logs.findMany({
       where: {
         person_type: 'employee',
-        full_name: {
-          not: '',
-        },
-        badge_number: {
-          not: '',
-        },
-        // Version améliorée pour exclure les visiteurs (avec variations d'orthographe)
-        AND: [
-          {
-            group_name: {
-              not: { contains: 'visiteur' }
-            }
-          },
-          {
-            group_name: {
-              not: { contains: 'Visiteur' }
-            }
-          },
-          {
-            group_name: {
-              not: { contains: 'visiteurs' }
-            }
-          },
-          {
-            group_name: {
-              not: { contains: 'Visiteurs' }
-            }
-          },
-          {
-            group_name: {
-              not: { contains: 'VISITEUR' }
-            }
-          },
-          {
-            group_name: {
-              not: { contains: 'VISITEURS' }
-            }
+        // S'assurer que ce ne sont pas des visiteurs (par le groupe)
+        NOT: {
+          group_name: {
+            contains: 'visit'
           }
-        ]
+        }
       },
       distinct: ['badge_number'],
-      orderBy: {
-        event_date: 'desc',
-      },
+      orderBy: { event_date: 'desc' }
     });
 
-    console.log(`Trouvé ${uniqueEmployeeLogs.length} employés uniques dans les logs d'accès.`);
+    console.log(`Trouvé ${accessLogs.length} badges employés uniques dans les logs d'accès`);
 
-    let created = 0;
-    let skipped = 0;
-    let errors = 0;
+    // 3. Récupérer les employés existants
+    const existingEmployees = await prisma.employees.findMany({
+      select: { badge_number: true }
+    });
+    
+    const existingBadgeNumbers = existingEmployees.map(e => e.badge_number);
+    console.log(`${existingEmployees.length} employés déjà dans la base de données`);
 
-    // 2. Pour chaque log unique, vérifier si l'employé existe déjà
-    for (const log of uniqueEmployeeLogs) {
+    // 4. Filtrer pour ne garder que les nouveaux employés
+    const newEmployees = accessLogs.filter(log => !existingBadgeNumbers.includes(log.badge_number));
+    console.log(`${newEmployees.length} nouveaux employés à ajouter`);
+
+    // 5. Insérer les nouveaux employés
+    const addedEmployees: { badge_number: string; first_name: string; last_name: string }[] = [];
+    
+    for (const log of newEmployees) {
+      // Extraire le prénom et le nom du full_name si disponible
+      let firstName = 'Employé';
+      let lastName = log.badge_number;
+      
+      if (log.full_name) {
+        const nameParts = log.full_name.split(' ');
+        if (nameParts.length >= 2) {
+          firstName = nameParts[0];
+          lastName = nameParts.slice(1).join(' ');
+        } else {
+          firstName = log.full_name;
+        }
+      }
+      
       try {
-        const { badge_number, full_name, group_name } = log;
-        
-        // Ignorer les entrées sans nom complet ou badge
-        if (!full_name || !badge_number) {
-          continue;
-        }
-        
-        // Vérifier si l'employé existe déjà
-        const existingEmployee = await prisma.employees.findUnique({
-          where: {
-            badge_number,
-          },
-        });
-
-        if (existingEmployee) {
-          skipped++;
-          continue;
-        }
-
-        // Extraire le prénom et le nom du full_name
-        let firstName = '';
-        let lastName = '';
-
-        if (full_name) {
-          const nameParts = full_name.trim().split(' ');
-          if (nameParts.length >= 2) {
-            firstName = nameParts[0];
-            lastName = nameParts.slice(1).join(' ');
-          } else {
-            firstName = full_name;
-            lastName = '';
-          }
-        }
-
-        // Créer l'employé
-        await prisma.employees.create({
+        const employee = await prisma.employees.create({
           data: {
-            badge_number,
+            badge_number: log.badge_number,
+            employee_id: `E${log.badge_number}`,
             first_name: firstName,
             last_name: lastName,
-            department: group_name || null,
-            status: 'active',
-            created_at: new Date(),
-            updated_at: new Date(),
-          },
+            department: log.group_name || 'Non spécifié',
+            email: `${firstName.toLowerCase()}.${lastName.toLowerCase()}@example.com`,
+            position: 'Non spécifié',
+            status: 'active'
+          }
         });
-
-        created++;
+        
+        addedEmployees.push({
+          badge_number: employee.badge_number,
+          first_name: employee.first_name,
+          last_name: employee.last_name
+        });
       } catch (error) {
-        console.error('Erreur lors de la création d\'un employé:', error);
-        errors++;
+        console.error(`Erreur lors de l'ajout de l'employé ${log.badge_number}:`, error);
       }
     }
 
-    const duration = (Date.now() - startTime) / 1000;
-
-    // Créer un enregistrement d'activité pour cette importation
-    await prisma.user_activities.create({
-      data: {
-        user_id: parseInt(session.user.id),
-        action: 'IMPORT_EMPLOYEES_BATCH',
-        details: JSON.stringify({
-          total: uniqueEmployeeLogs.length,
-          created,
-          skipped,
-          errors,
-          duration: `${duration.toFixed(2)} secondes`
-        }),
-        ip_address: req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown',
-        timestamp: new Date()
-      }
+    return NextResponse.json({ 
+      success: true, 
+      message: `${addedEmployees.length} nouveaux employés importés avec succès. ${visitorBadgeNumbers.length > 0 ? `${visitorBadgeNumbers.length} visiteurs purgés de la table employees.` : ''}`,
+      employeesAdded: addedEmployees.length,
+      visitorsPurged: visitorBadgeNumbers.length
     });
-
-    // Retourner les résultats
-    return NextResponse.json({
-      success: true,
-      stats: {
-        total: uniqueEmployeeLogs.length,
-        created,
-        skipped,
-        errors,
-        duration: `${duration.toFixed(2)} secondes`
-      }
-    });
+    
   } catch (error) {
     console.error('Erreur lors de l\'importation des employés:', error);
-    return NextResponse.json({ 
-      error: 'Erreur lors de l\'importation des employés',
-      details: (error as Error).message
-    }, { status: 500 });
+    return NextResponse.json({ error: 'Erreur lors de l\'importation des employés' }, { status: 500 });
   }
 } 

@@ -2,8 +2,8 @@
 
 import * as React from "react"
 import { CalendarIcon } from "lucide-react"
-import { addDays, format } from "date-fns"
-import { fr } from 'date-fns/locale';
+import { format } from "date-fns"
+import { fr } from 'date-fns/locale'
 import { DateRange } from "react-day-picker"
 
 import { cn } from "@/lib/utils"
@@ -14,6 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
+import { DATE_FORMATS, DATE_PICKER_PRESETS } from "@/lib/constants"
 
 interface DateRangePickerProps {
   value?: DateRange | undefined
@@ -21,6 +22,8 @@ interface DateRangePickerProps {
   className?: string
   align?: "center" | "start" | "end"
   disabled?: boolean
+  showPresets?: boolean
+  format?: keyof typeof DATE_FORMATS
 }
 
 export function DateRangePicker({
@@ -29,45 +32,41 @@ export function DateRangePicker({
   className,
   align = "start",
   disabled = false,
+  showPresets = true,
+  format: dateFormat = "DISPLAY",
 }: DateRangePickerProps) {
-  const [date, setDate] = React.useState<DateRange | undefined>(value)
+  // Utilisation de useReducer pour une meilleure gestion des états
+  const [state, dispatch] = React.useReducer(
+    (state: { date: DateRange | undefined }, action: { type: string; payload?: DateRange }) => {
+      switch (action.type) {
+        case "SET_DATE":
+          return { ...state, date: action.payload }
+        case "RESET":
+          return { ...state, date: undefined }
+        default:
+          return state
+      }
+    },
+    { date: value }
+  )
 
-  // Synchroniser l'état local avec les props lorsque value change
+  // Synchronisation avec les props
   React.useEffect(() => {
-    setDate(value);
-  }, [value]);
+    if (value !== state.date) {
+      dispatch({ type: "SET_DATE", payload: value })
+    }
+  }, [value])
 
-  // Presets pour les plages de dates courantes
-  const presets = [
-    {
-      name: "Aujourd'hui",
-      range: {
-        from: new Date(),
-        to: new Date(),
-      },
-    },
-    {
-      name: "7 derniers jours",
-      range: {
-        from: addDays(new Date(), -7),
-        to: new Date(),
-      },
-    },
-    {
-      name: "14 derniers jours",
-      range: {
-        from: addDays(new Date(), -14),
-        to: new Date(),
-      },
-    },
-    {
-      name: "30 derniers jours",
-      range: {
-        from: addDays(new Date(), -30),
-        to: new Date(),
-      },
-    },
-  ]
+  // Gestionnaire de changement de date
+  const handleDateChange = React.useCallback((newDate: DateRange | undefined) => {
+    dispatch({ type: "SET_DATE", payload: newDate })
+    onChange(newDate)
+  }, [onChange])
+
+  // Gestionnaire de preset
+  const handlePresetSelect = React.useCallback((preset: typeof DATE_PICKER_PRESETS[number]) => {
+    handleDateChange(preset.range)
+  }, [handleDateChange])
 
   return (
     <div className={cn("grid gap-2", className)}>
@@ -78,19 +77,19 @@ export function DateRangePicker({
             variant={"outline"}
             className={cn(
               "w-full justify-start text-left font-normal",
-              !date && "text-muted-foreground"
+              !state.date && "text-muted-foreground"
             )}
             disabled={disabled}
           >
             <CalendarIcon className="mr-2 h-4 w-4" />
-            {date?.from ? (
-              date.to ? (
+            {state.date?.from ? (
+              state.date.to ? (
                 <>
-                  {format(date.from, "d LLL y", { locale: fr })} -{" "}
-                  {format(date.to, "d LLL y", { locale: fr })}
+                  {format(state.date.from, DATE_FORMATS[dateFormat], { locale: fr })} -{" "}
+                  {format(state.date.to, DATE_FORMATS[dateFormat], { locale: fr })}
                 </>
               ) : (
-                format(date.from, "d LLL y", { locale: fr })
+                format(state.date.from, DATE_FORMATS[dateFormat], { locale: fr })
               )
             ) : (
               <span>Sélectionner une période</span>
@@ -103,33 +102,31 @@ export function DateRangePicker({
           sideOffset={4}
         >
           <div className="flex flex-col space-y-3 p-3 sm:flex-row sm:space-x-3 sm:space-y-0">
-            <div className="flex flex-col space-y-2">
-              {presets.map((preset) => (
-                <Button
-                  key={preset.name}
-                  variant="outline"
-                  size="sm"
-                  className="justify-start font-normal"
-                  onClick={() => {
-                    setDate(preset.range)
-                    onChange(preset.range)
-                  }}
-                >
-                  {preset.name}
-                </Button>
-              ))}
-            </div>
-            <div className="border-t sm:border-t-0 sm:border-l my-2 sm:my-0" />
+            {showPresets && (
+              <>
+                <div className="flex flex-col space-y-2">
+                  {DATE_PICKER_PRESETS.map((preset) => (
+                    <Button
+                      key={preset.name}
+                      variant="outline"
+                      size="sm"
+                      className="justify-start font-normal"
+                      onClick={() => handlePresetSelect(preset)}
+                    >
+                      {preset.name}
+                    </Button>
+                  ))}
+                </div>
+                <div className="border-t sm:border-t-0 sm:border-l my-2 sm:my-0" />
+              </>
+            )}
             <div className="relative">
               <Calendar
                 initialFocus
                 mode="range"
-                defaultMonth={date?.from || new Date()}
-                selected={date}
-                onSelect={(selectedDate) => {
-                  setDate(selectedDate)
-                  onChange(selectedDate)
-                }}
+                defaultMonth={state.date?.from || new Date()}
+                selected={state.date}
+                onSelect={handleDateChange}
                 numberOfMonths={2}
                 locale={fr}
                 disabled={disabled}
@@ -153,4 +150,58 @@ export function DateRangePicker({
       </Popover>
     </div>
   )
+}
+
+interface DatePickerWithRangeProps {
+  date: DateRange | undefined;
+  onDateChange: (date: DateRange | undefined) => void;
+  className?: string;
+}
+
+export function DatePickerWithRange({
+  date,
+  onDateChange,
+  className,
+}: DatePickerWithRangeProps) {
+  return (
+    <div className={cn('grid gap-2', className)}>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button
+            id="date"
+            variant={'outline'}
+            className={cn(
+              'w-full justify-start text-left font-normal',
+              !date && 'text-muted-foreground'
+            )}
+          >
+            <CalendarIcon className="mr-2 h-4 w-4" />
+            {date?.from ? (
+              date.to ? (
+                <>
+                  {format(date.from, 'dd/MM/yyyy', { locale: fr })} -{' '}
+                  {format(date.to, 'dd/MM/yyyy', { locale: fr })}
+                </>
+              ) : (
+                format(date.from, 'dd/MM/yyyy', { locale: fr })
+              )
+            ) : (
+              <span>Sélectionner une période</span>
+            )}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-0" align="start">
+          <Calendar
+            initialFocus
+            mode="range"
+            defaultMonth={date?.from}
+            selected={date}
+            onSelect={onDateChange}
+            numberOfMonths={2}
+            locale={fr}
+          />
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
 } 

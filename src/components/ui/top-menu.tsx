@@ -15,7 +15,6 @@ export default function TopMenu() {
   const { theme, setTheme } = useTheme();
   const { user, isAuthenticated, logout } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   
   // Get user initials from name
@@ -27,11 +26,6 @@ export default function TopMenu() {
   };
 
   const userInitials = getUserInitials(user?.name || 'User');
-
-  // Handle mounting state for theme
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const handleToggleSidebar = () => {
     window.dispatchEvent(toggleSidebarEvent);
@@ -56,11 +50,7 @@ export default function TopMenu() {
     setUserMenuOpen(false);
   };
 
-  // Ne pas rendre le contenu jusqu'à ce que le composant soit monté
-  if (!mounted) {
-    return null;
-  }
-
+  // Utiliser un rendu qui fonctionne à la fois côté serveur et client
   return (
     <header className={`border-b bg-[#0078D4] dark:bg-[#0078D4] dark:border-gray-800`}>
       <div className="flex items-center justify-between w-full px-4 py-3">
@@ -100,6 +90,7 @@ export default function TopMenu() {
             className="text-white hover:bg-[#106EBE] hover:text-white"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             aria-label="Switch theme"
+            suppressHydrationWarning
           >
             {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </Button>

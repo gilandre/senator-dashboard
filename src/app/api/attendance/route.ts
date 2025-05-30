@@ -1,30 +1,14 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
-import type { access_logs, holidays } from '@prisma/client';
+import { AuthLogger } from '@/lib/security/authLogger';
+import type { access_logs, access_logs_person_type, access_logs_event_type, attendance_parameters } from '@prisma/client';
+import { format, isWeekend, parseISO } from 'date-fns';
 
-// Définir un type étendu pour attendance_parameters qui inclut working_days
-type AttendanceParams = {
-  id: number;
-  start_hour: string;
-  end_hour: string;
-  daily_hours: number | bigint | Decimal;
-  count_weekends: boolean | null;
-  count_holidays: boolean | null;
-  lunch_break: boolean | null;
-  lunch_break_duration: number | null;
-  lunch_break_start: string | null;
-  lunch_break_end: string | null;
-  allow_other_breaks: boolean | null;
-  max_break_time: number | null;
-  absence_request_deadline: number | null;
-  overtime_request_deadline: number | null;
-  round_attendance_time: boolean | null;
-  rounding_interval: number | null;
-  rounding_direction: string | null;
-  last_updated: Date | null;
-  updated_by: string | null;
-  working_days: string | null;
-};
+// Définir un type étendu pour attendance_parameters si nécessaire
+// mais utiliser directement le type généré par Prisma pour la compatibilité
+type AttendanceParams = attendance_parameters;
 
 // Type Decimal pour la compatibilité avec Prisma
 type Decimal = {
@@ -32,36 +16,40 @@ type Decimal = {
   toNumber: () => number;
 };
 
-// Calculer les heures d'arrivée et de départ pour chaque employé et chaque jour
-type AttendanceRecord = {
-  date: string;
+// Structure attendue par le frontend pour les données d'assiduité
+interface AttendanceRecord {
+  _id: string;
   badgeNumber: string;
-  firstName: string | null;
-  lastName: string | null;
-  arrivalTime: string | null;
-  departureTime: string | null;
-  arrivalReader: string | null;  // Lecteur de première entrée
-  departureReader: string | null;  // Lecteur de dernière sortie
-  totalHours: number | null;
+  firstName: string;
+  lastName: string;
+  date: string;
   isHoliday: boolean;
-  isContinuousDay: boolean;
+  holidayName?: string;
   isWeekend: boolean;
-  isHalfDay: boolean;  // Indique si c'est une demi-journée
-  halfDayType: 'morning' | 'afternoon' | null;  // Type de demi-journée
-  holidayName: string | undefined;
-  notes: string | null;
-  reader: string;
-  pauseMinutes: number | null;  // Minutes de pause (hors déjeuner)
-  lunchMinutes: number | null;  // Minutes de pause déjeuner
   events: Array<{
     badgeNumber: string;
-    date: string;
+    eventDate: string;
     time: string;
     eventType: string;
     rawEventType: string | null;
-    readerName: string;  // Nom du lecteur pour cet événement
+    readerName: string;
+    _id: string;
   }>;
-};
+  totalHours: number;
+  formattedTotalHours: string;
+  arrivalTime: string;
+  departureTime: string;
+  arrivalReader: string;
+  departureReader: string;
+  reader: string;
+  status: string;
+  isContinuousDay: boolean;
+  isHalfDay: boolean;
+  halfDayType?: 'morning' | 'afternoon';
+  pauseMinutes: number;
+  lunchMinutes: number;
+  personType?: 'employee' | 'visitor' | 'unknown';
+}
 
 // Type pour les logs d'accès avec des propriétés supplémentaires
 type ExtendedAccessLog = access_logs & {
@@ -97,366 +85,628 @@ function roundTime(timeStr: string, interval: number, direction: 'up' | 'down' |
   return `${adjustedHours.toString().padStart(2, '0')}:${roundedMinutes.toString().padStart(2, '0')}`;
 }
 
-export async function GET(request: Request) {
+// Formater le temps en heures:minutes
+function formatTime(date: Date): string {
+  return format(date, 'HH:mm');
+}
+
+// Formater les heures décimales en chaîne de caractères (ex: 8.5 => "8h30")
+function formatHours(hours: number): string {
+  const wholeHours = Math.floor(hours);
+  const minutes = Math.round((hours - wholeHours) * 60);
+  return `${wholeHours}h${minutes.toString().padStart(2, '0')}`;
+}
+
+// Calculer la différence en heures entre deux heures (format HH:MM)
+function calculateHoursDifference(startTime: string, endTime: string, lunchMinutes: number = 60): number {
+  if (!startTime || !endTime) return 0;
+  
+  const [startHours, startMinutes] = startTime.split(':').map(Number);
+  const [endHours, endMinutes] = endTime.split(':').map(Number);
+  
+  let totalStartMinutes = startHours * 60 + startMinutes;
+  let totalEndMinutes = endHours * 60 + endMinutes;
+  
+  // Gérer le cas où l'heure de fin est le lendemain (nuit)
+  if (totalEndMinutes < totalStartMinutes) {
+    totalEndMinutes += 24 * 60; // Ajouter 24 heures
+  }
+  
+  // Calculer la différence en minutes, puis soustraire la pause déjeuner
+  const diffMinutes = totalEndMinutes - totalStartMinutes - lunchMinutes;
+  
+  // Convertir en heures décimales (arrondi à 2 décimales)
+  return Math.max(0, parseFloat((diffMinutes / 60).toFixed(2)));
+}
+
+// Vérifier si une date est un jour férié
+async function isHoliday(date: Date): Promise<{ isHoliday: boolean, holidayName?: string }> {
+  const formattedDate = format(date, 'yyyy-MM-dd');
+  
+  const holiday = await prisma.holidays.findUnique({
+    where: { date: new Date(formattedDate) }
+  });
+  
+  if (holiday) {
+    return { isHoliday: true, holidayName: holiday.name };
+  }
+  
+  return { isHoliday: false };
+}
+
+/**
+ * GET /api/attendance - Récupérer les données d'assiduité
+ */
+export async function GET(req: NextRequest) {
   try {
-    // Récupérer les paramètres de date depuis l'URL
-    const url = new URL(request.url);
-    const startDate = url.searchParams.get('startDate');
-    const endDate = url.searchParams.get('endDate');
-    const allowFuture = url.searchParams.get('allowFuture') === 'true';
-    const testData = url.searchParams.get('testData') === 'true';
-    
-    console.log('Dates reçues:', { startDate, endDate });
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
 
+    // Récupérer les paramètres de la requête
+    const { searchParams } = new URL(req.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const employeeId = searchParams.get('employeeId');
+    const department = searchParams.get('department');
+
+    // Valider les dates
     if (!startDate || !endDate) {
-      console.error('Dates manquantes dans la requête');
       return NextResponse.json(
-        { error: 'Les paramètres startDate et endDate sont requis' },
+        { error: "Les dates de début et de fin sont requises" },
         { status: 400 }
       );
     }
 
-    // Convertir les dates en objets Date
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    console.log(`[DEBUG] Requête attendance: startDate=${startDate}, endDate=${endDate}, employeeId=${employeeId}, department=${department}`);
 
-    console.log('Dates converties:', { 
-      start: start.toISOString(), 
-      end: end.toISOString() 
+    // Construire la requête pour les logs d'accès
+    const where = {
+      event_date: {
+        gte: new Date(startDate),
+        lte: new Date(endDate)
+      },
+      // Supprimer le filtre par type de personne pour inclure tous les utilisateurs (employés, visiteurs, etc.)
+      // person_type: 'employee' as access_logs_person_type,
+      ...(employeeId && { badge_number: { equals: employeeId } }),
+      ...(department && {
+        group_name: { equals: department }
+      })
+    };
+
+    // Récupérer les données d'accès
+    const accessLogs = await prisma.access_logs.findMany({
+      where,
+      orderBy: {
+        event_date: 'desc'
+      }
     });
-
-    // Vérifier que les dates sont valides
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-      console.error('Dates invalides:', { start, end });
-      return NextResponse.json(
-        { error: 'Les dates fournies sont invalides' },
-        { status: 400 }
-      );
+    
+    console.log(`[DEBUG] Nombre d'enregistrements trouvés dans access_logs: ${accessLogs.length}`);
+    
+    if (accessLogs.length === 0) {
+      console.log('[DEBUG] Aucun enregistrement trouvé, vérifier les filtres ou les données en base');
+      return NextResponse.json([]);
+    }
+    
+    // Récupérer les numéros de badge uniques
+    const badgeNumbers = Array.from(new Set(accessLogs.map(log => log.badge_number)));
+    console.log(`[DEBUG] Numéros de badge uniques: ${badgeNumbers.length} [${badgeNumbers.join(', ')}]`);
+    
+    // Récupérer les informations des employés
+    const employees = await prisma.employees.findMany({
+      where: {
+        badge_number: {
+          in: badgeNumbers
+        }
+      }
+    });
+    
+    console.log(`[DEBUG] Employés trouvés: ${employees.length}`);
+    if (employees.length > 0) {
+      console.log(`[DEBUG] Badges des employés trouvés: [${employees.map(e => e.badge_number).join(', ')}]`);
+    }
+    
+    // Récupérer les informations des visiteurs pour les badges qui ne correspondent pas à des employés
+    const employeeBadges = employees.map(e => e.badge_number);
+    const visitorBadges = badgeNumbers.filter(badge => !employeeBadges.includes(badge));
+    
+    // Définir le type visitors basé sur le schéma de la table visiteurs
+    let visitors: {
+      id: number;
+      badge_number: string;
+      first_name: string;
+      last_name: string;
+      company: string;
+      reason: string | null;
+      status: string;
+      created_at: Date;
+      updated_at: Date;
+      access_count: number;
+      first_seen: Date | null;
+      last_seen: Date | null;
+    }[] = [];
+    
+    if (visitorBadges.length > 0) {
+      visitors = await prisma.visitors.findMany({
+        where: {
+          badge_number: {
+            in: visitorBadges
+          }
+        }
+      });
+      console.log(`[DEBUG] Visiteurs trouvés: ${visitors.length}`);
+      if (visitors.length > 0) {
+        console.log(`[DEBUG] Badges des visiteurs trouvés: [${visitors.map(v => v.badge_number).join(', ')}]`);
+      }
     }
 
-    // Vérifier si les dates sont dans le futur
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Récupérer les paramètres de configuration de l'assiduité
+    const attendanceParams = await prisma.attendance_parameters.findFirst();
     
-    if (!allowFuture && !testData && (end > today || start > today)) {
-      return NextResponse.json(
-        { 
-          error: 'Les dates futures ne sont pas autorisées', 
-          message: 'Utilisez le paramètre allowFuture=true ou testData=true pour les dates futures'
-        },
-        { status: 400 }
-      );
-    }
+    // Récupérer les paramètres de pause déjeuner
+    const lunchDuration = attendanceParams?.lunch_break_duration || 60;
+    const lunchBreakEnabled = attendanceParams?.lunch_break === true;
+    const lunchBreakStart = attendanceParams?.lunch_break_start || '12:00';
+    const lunchBreakEnd = attendanceParams?.lunch_break_end || '13:00';
     
-    // Si testData est true ou si les dates sont futures, générer des données de test
-    if (testData || end > today || start > today) {
-      console.log(`Génération de données de test pour la période: ${startDate} à ${endDate}`);
-      const testRecords = generateTestData(start, end);
-      return NextResponse.json(testRecords);
-    }
+    // Récupérer les heures de travail standard
+    const workStartHour = attendanceParams?.start_hour || '08:00';
+    const workEndHour = attendanceParams?.end_hour || '17:00';
     
-    // Récupérer les jours fériés pour la période
+    // Récupérer les jours fériés dans la période
     const holidays = await prisma.holidays.findMany({
       where: {
         date: {
-          gte: start,
-          lte: end
+          gte: new Date(startDate),
+          lte: new Date(endDate)
         }
       }
-    }).catch(error => {
-      console.error('Erreur lors de la récupération des jours fériés:', error);
-      return [];
     });
     
-    console.log('Jours fériés trouvés:', holidays.length);
+    const holidayDates = holidays.reduce((acc, holiday) => {
+      const dateStr = format(holiday.date, 'yyyy-MM-dd');
+      acc[dateStr] = holiday.name;
+      return acc;
+    }, {} as Record<string, string>);
     
-    // Récupérer les paramètres de l'assiduité
-    let defaultParameters = {
-      startHour: '08:00',
-      endHour: '17:00',
-      dailyHours: 8.0,
-      countWeekends: false,
-      countHolidays: false,
-      workingDays: [1, 2, 3, 4, 5],
-      lunchBreak: true,
-      lunchBreakDuration: 60,
-      lunchBreakStart: '12:00',
-      lunchBreakEnd: '13:00',
-      allowOtherBreaks: true,
-      maxBreakTime: 30,
-      absenceRequestDeadline: 3,
-      overtimeRequestDeadline: 5,
-      roundAttendanceTime: false,
-      roundingInterval: 15,
-      roundingDirection: 'nearest' as 'up' | 'down' | 'nearest',
-      lastUpdated: new Date(),
-      updatedBy: 'system'
-    };
+    // Récupérer les jours définis comme journées continues dans la configuration
+    // Format "1,4,7" (où 1=lundi, 7=dimanche)
+    // Note: Utilisation d'une méthode alternative pour récupérer les jours continus
+    const continuousDaysParam = ((attendanceParams as any)?.continuous_days || '')
+      .split(',')
+      .map(Number)
+      .filter(n => !isNaN(n));
     
-    try {
-      const parametersDoc = await prisma.attendance_parameters.findFirst();
-      if (parametersDoc) {
-        // Convertir les jours de travail de chaîne en tableau
-        const workingDays = (parametersDoc as any).working_days 
-          ? (parametersDoc as any).working_days.split(',').map((d: string) => parseInt(d))
-          : [1, 2, 3, 4, 5]; // Par défaut, lundi à vendredi si working_days n'existe pas
+    // Convertir les minutes pour les calculs de pause déjeuner
+    const lunchStartMinutes = convertTimeToMinutes(lunchBreakStart);
+    const lunchEndMinutes = convertTimeToMinutes(lunchBreakEnd);
 
-        // Si un document de paramètrage existe, l'utiliser
-        defaultParameters = {
-          ...defaultParameters,
-          startHour: parametersDoc.start_hour,
-          endHour: parametersDoc.end_hour,
-          dailyHours: typeof parametersDoc.daily_hours === 'object' && 'toNumber' in parametersDoc.daily_hours 
-            ? parametersDoc.daily_hours.toNumber() 
-            : Number(parametersDoc.daily_hours),
-          countWeekends: parametersDoc.count_weekends ?? false,
-          countHolidays: parametersDoc.count_holidays ?? false,
-          workingDays,
-          lunchBreak: parametersDoc.lunch_break ?? true,
-          lunchBreakDuration: parametersDoc.lunch_break_duration ?? 60,
-          lunchBreakStart: parametersDoc.lunch_break_start ?? '12:00',
-          lunchBreakEnd: parametersDoc.lunch_break_end ?? '13:00',
-          allowOtherBreaks: parametersDoc.allow_other_breaks ?? true,
-          maxBreakTime: parametersDoc.max_break_time ?? 30,
-          absenceRequestDeadline: parametersDoc.absence_request_deadline ?? 3,
-          overtimeRequestDeadline: parametersDoc.overtime_request_deadline ?? 5,
-          roundAttendanceTime: parametersDoc.round_attendance_time ?? false,
-          roundingInterval: parametersDoc.rounding_interval ?? 15,
-          roundingDirection: (parametersDoc.rounding_direction as 'up' | 'down' | 'nearest') ?? 'nearest',
-          lastUpdated: parametersDoc.last_updated ?? new Date(),
-          updatedBy: parametersDoc.updated_by ?? 'system'
-        };
-      }
-    } catch (error) {
-      console.error('Erreur lors de la récupération des paramètres:', error);
-      // Continuer avec les paramètres par défaut
-    }
-    
-    const parameters = defaultParameters;
-    
-    // Mapper les journées fériées par date pour une recherche plus facile
-    const holidayMap = new Map();
-    holidays.forEach(holiday => {
-      const dateStr = holiday.date.toISOString().split('T')[0];
-      holidayMap.set(dateStr, holiday);
-    });
-    
-    // Récupérer tous les événements d'accès dans la plage de dates
-    const accessLogs = await prisma.access_logs.findMany({
-      where: {
-        event_date: {
-          gte: start,
-          lte: end
-        }
-      },
-      orderBy: [
-        { event_date: 'asc' },
-        { event_time: 'asc' }
-      ]
-    }).catch(error => {
-      console.error('Erreur lors de la récupération des logs d\'accès:', error);
-      return [];
-    }) as ExtendedAccessLog[];
-
-    console.log('Logs d\'accès trouvés:', accessLogs.length);
-
-    if (!accessLogs || accessLogs.length === 0) {
-      console.log('Aucun log d\'accès trouvé pour la période');
-      return NextResponse.json(
-        { data: [], message: 'Aucune donnée disponible pour cette période' },
-        { status: 200 }
-      );
-    }
-    
-    // Organiser les événements par badge et par date
-    const employeeAccessMap = new Map();
+    // Organiser les logs par badge et par jour
+    const logsByBadgeAndDate: Record<string, Record<string, access_logs[]>> = {};
     
     accessLogs.forEach(log => {
-      // MODIFICATION: Vérifier que les logs ont un badge_number valide
-      if (!log.badge_number || log.badge_number.trim() === '') {
-        return; // Ignorer les logs sans numéro de badge
+      const badge = log.badge_number;
+      const dateStr = format(log.event_date, 'yyyy-MM-dd');
+      
+      if (!logsByBadgeAndDate[badge]) {
+        logsByBadgeAndDate[badge] = {};
       }
       
-      const dateStr = log.event_date.toISOString().split('T')[0];
-      const key = `${log.badge_number}_${dateStr}`;
-      
-      if (!employeeAccessMap.has(key)) {
-        employeeAccessMap.set(key, {
-          date: dateStr,
-          badgeNumber: log.badge_number,
-          firstName: log.full_name ? log.full_name.split(' ')[0] : null,
-          lastName: log.full_name ? log.full_name.split(' ').slice(1).join(' ') : null,
-          events: []
-        });
+      if (!logsByBadgeAndDate[badge][dateStr]) {
+        logsByBadgeAndDate[badge][dateStr] = [];
       }
       
-      const eventTime = log.event_time.toTimeString().slice(0, 8);
-      employeeAccessMap.get(key).events.push({
-        time: eventTime,
-        type: log.event_type,
-        rawEventType: log.raw_event_type,
-        reader: log.reader || 'unknown',
-        readerName: (log as ExtendedAccessLog).reader_name || log.reader || 'unknown'
-      });
+      logsByBadgeAndDate[badge][dateStr].push(log);
     });
-    
-    // Calculer les heures d'arrivée et de départ pour chaque employé et chaque jour
+
+    // Transformer les logs en enregistrements d'assiduité
     const attendanceRecords: AttendanceRecord[] = [];
     
-    // Utiliser Array.from pour convertir en tableau d'entrées avant d'itérer
-    for (const [_, record] of Array.from(employeeAccessMap.entries())) {
-      // Trier les événements par heure
-      record.events.sort((a: { time: string }, b: { time: string }) => a.time.localeCompare(b.time));
+    for (const badge in logsByBadgeAndDate) {
+      // Chercher d'abord si c'est un employé
+      let employee = employees.find(e => e.badge_number === badge);
+      let isVisitor = false;
       
-      // Déterminer l'heure d'arrivée (premier événement de la journée)
-      let arrivalTime = record.events.length > 0 ? record.events[0].time : null;
-      let arrivalReader = record.events.length > 0 ? record.events[0].readerName || record.events[0].reader : null;
-      
-      // Déterminer l'heure de départ (dernier événement de la journée)
-      let departureTime = record.events.length > 0 ? record.events[record.events.length - 1].time : null;
-      let departureReader = record.events.length > 0 ? record.events[record.events.length - 1].readerName || record.events[record.events.length - 1].reader : null;
-      
-      // Si l'arrondi est activé, appliquer l'arrondi
-      if (parameters.roundAttendanceTime && arrivalTime) {
-        arrivalTime = roundTime(arrivalTime, parameters.roundingInterval, parameters.roundingDirection);
+      // Si ce n'est pas un employé, vérifier si c'est un visiteur
+      let visitor;
+      if (!employee) {
+        visitor = visitors.find(v => v.badge_number === badge);
+        isVisitor = !!visitor;
       }
       
-      if (parameters.roundAttendanceTime && departureTime) {
-        departureTime = roundTime(departureTime, parameters.roundingInterval, parameters.roundingDirection);
-      }
+      // Obtenir les informations de la personne (employé ou visiteur)
+      const personInfo = employee ? {
+        firstName: employee.first_name,
+        lastName: employee.last_name,
+        type: 'employee' as const
+      } : visitor ? {
+        firstName: visitor.first_name,
+        lastName: visitor.last_name,
+        type: 'visitor' as const
+      } : {
+        // Si aucune correspondance, utiliser les informations du log
+        firstName: accessLogs.find(log => log.badge_number === badge)?.full_name?.split(' ')[0] || 'Personne',
+        lastName: accessLogs.find(log => log.badge_number === badge)?.full_name?.split(' ')[1] || badge,
+        type: (accessLogs.find(log => log.badge_number === badge)?.person_type || 'unknown') as 'employee' | 'visitor' | 'unknown'
+      };
       
-      // Calculer les heures totales si arrivée et départ sont disponibles
-      let totalHours: number | null = null;
-      let notes: string | null = null;
-      
-      // Initialiser les variables de pause
-      let pauseMinutes = 0;
-      let lunchMinutes = 0;
-      
-      if (arrivalTime && departureTime) {
-        const [arrivalHours, arrivalMinutes] = arrivalTime.split(':').map(Number);
-        const [departureHours, departureMinutes] = departureTime.split(':').map(Number);
+      for (const dateStr in logsByBadgeAndDate[badge]) {
+        const logsForDay = logsByBadgeAndDate[badge][dateStr];
         
-        // Convertir en minutes pour faciliter le calcul
-        const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
-        const departureTotalMinutes = departureHours * 60 + departureMinutes;
+        // Trier les logs par heure
+        logsForDay.sort((a, b) => {
+          return new Date(a.event_time).getTime() - new Date(b.event_time).getTime();
+        });
         
-        // Calculer la durée en minutes
-        let durationMinutes = departureTotalMinutes - arrivalTotalMinutes;
+        // Déterminer l'heure d'arrivée et de départ
+        const firstLog = logsForDay[0];
+        const lastLog = logsForDay[logsForDay.length - 1];
         
-        // Si négatif, considérer comme une journée continue (passant minuit)
-        const isContinuousDay = durationMinutes < 0;
-        if (isContinuousDay) {
-          durationMinutes = (24 * 60 - arrivalTotalMinutes) + departureTotalMinutes;
-          notes = "Journée continue";
+        // Vérifier si le jour est un weekend ou férié
+        const date = new Date(dateStr);
+        const isWeekendDay = isWeekend(date);
+        const isHolidayDay = !!holidayDates[dateStr];
+        
+        // Vérifier si le jour est une journée continue selon la configuration
+        // Le jour de la semaine: 0 = dimanche, 1 = lundi, ..., 6 = samedi
+        const dayOfWeek = date.getDay();
+        // Convertir pour correspondre au format du paramètre (où 1 = lundi, 7 = dimanche)
+        const configDayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+        const isContinuousDay = continuousDaysParam.includes(configDayOfWeek);
+        
+        // Séparer les entrées des sorties
+        const entryLogs = logsForDay.filter(log => 
+          log.event_type === 'entry' || 
+          log.direction === 'in' ||
+          (log.reader && log.reader.toLowerCase().includes('entree') || log.reader?.toLowerCase().includes('entrée'))
+        );
+        
+        const exitLogs = logsForDay.filter(log => 
+          log.event_type === 'exit' || 
+          log.direction === 'out' ||
+          (log.reader && log.reader.toLowerCase().includes('sortie'))
+        );
+        
+        // Utiliser le premier log d'entrée et le dernier log de sortie
+        const firstEntry = entryLogs.length > 0 ? entryLogs[0] : firstLog;
+        const lastExit = exitLogs.length > 0 ? exitLogs[exitLogs.length - 1] : lastLog;
+        
+        // Formater les heures
+        const arrivalTime = formatTime(new Date(firstEntry.event_time));
+        const departureTime = formatTime(new Date(lastExit.event_time));
+        
+        // Convertir les heures en minutes pour les calculs
+        const arrivalMinutes = convertTimeToMinutes(arrivalTime);
+        const departureMinutes = convertTimeToMinutes(departureTime);
+        
+        // Calculer la durée de présence en tenant compte de la pause déjeuner
+        let totalMinutes = 0;
+        let pauseDeducted = 0;
+        
+        if (departureMinutes < arrivalMinutes) {
+          // Cas spécial: journée continue passant par minuit
+          totalMinutes = (24 * 60 - arrivalMinutes) + departureMinutes;
+        } else {
+          totalMinutes = departureMinutes - arrivalMinutes;
         }
         
-        // Déterminer les autres pauses
-        if (parameters.allowOtherBreaks && parameters.maxBreakTime) {
-          pauseMinutes = parameters.maxBreakTime;
+        // Déduire la pause déjeuner uniquement si:
+        // 1. La pause déjeuner est activée dans les paramètres
+        // 2. L'employé était présent pendant la période de pause
+        // 3. Ce n'est pas un weekend ou un jour férié
+        // 4. Ce n'est pas une journée continue
+        if (lunchBreakEnabled && !isWeekendDay && !isHolidayDay && !isContinuousDay) {
+          // Vérifier si la période de présence chevauche la pause déjeuner
+          const presenceDuringLunch = 
+            (arrivalMinutes <= lunchStartMinutes && departureMinutes >= lunchEndMinutes) || // Présent pendant toute la pause
+            (arrivalMinutes >= lunchStartMinutes && arrivalMinutes < lunchEndMinutes) ||   // Arrivé pendant la pause
+            (departureMinutes > lunchStartMinutes && departureMinutes <= lunchEndMinutes); // Parti pendant la pause
+            
+          if (presenceDuringLunch) {
+            // Si présent pendant toute la pause, déduire la durée complète
+            if (arrivalMinutes <= lunchStartMinutes && departureMinutes >= lunchEndMinutes) {
+              pauseDeducted = lunchEndMinutes - lunchStartMinutes;
+            } 
+            // Si arrivé pendant la pause, déduire depuis l'arrivée jusqu'à la fin de la pause
+            else if (arrivalMinutes >= lunchStartMinutes && arrivalMinutes < lunchEndMinutes) {
+              pauseDeducted = lunchEndMinutes - arrivalMinutes;
+            }
+            // Si parti pendant la pause, déduire depuis le début de la pause jusqu'au départ
+            else if (departureMinutes > lunchStartMinutes && departureMinutes <= lunchEndMinutes) {
+              pauseDeducted = departureMinutes - lunchStartMinutes;
+            }
+          }
         }
         
-        // Déduire la pause déjeuner si elle est activée
-        if (parameters.lunchBreak && durationMinutes > parameters.lunchBreakDuration) {
-          lunchMinutes = parameters.lunchBreakDuration;
-          durationMinutes -= parameters.lunchBreakDuration;
-        }
+        // Calculer le temps total en déduisant la pause
+        const netMinutes = totalMinutes - pauseDeducted;
+        const totalHours = netMinutes / 60;
         
-        // Convertir en heures
-        totalHours = Math.round(durationMinutes / 60 * 100) / 100; // Arrondir à 2 décimales
+        // Créer les événements au format attendu
+        const events = logsForDay.map(log => ({
+          badgeNumber: log.badge_number,
+          eventDate: format(log.event_date, 'yyyy-MM-dd'),
+          time: formatTime(new Date(log.event_time)),
+          eventType: log.event_type || (log.direction === 'in' ? 'entry' : log.direction === 'out' ? 'exit' : 'unknown'),
+          rawEventType: log.raw_event_type,
+          readerName: log.reader || 'Non spécifié',
+          _id: log.id.toString()
+        }));
+        
+        // Créer l'enregistrement d'assiduité
+        attendanceRecords.push({
+          _id: `${badge}_${dateStr}`,
+          badgeNumber: badge,
+          firstName: personInfo.firstName,
+          lastName: personInfo.lastName,
+          date: dateStr,
+          isHoliday: isHolidayDay,
+          holidayName: holidayDates[dateStr],
+          isWeekend: isWeekendDay,
+          events,
+          totalHours,
+          formattedTotalHours: formatHours(totalHours),
+          arrivalTime,
+          departureTime,
+          arrivalReader: firstEntry.reader || 'Non spécifié',
+          departureReader: lastExit.reader || 'Non spécifié',
+          reader: firstEntry.reader || 'Non spécifié',  // Compatibilité
+          status: isHolidayDay ? 'HOLIDAY' : isWeekendDay ? 'WEEKEND' : isContinuousDay ? 'CONTINUOUS' : 'PRESENT',
+          isContinuousDay,
+          isHalfDay: false,  // Par défaut
+          halfDayType: undefined,
+          pauseMinutes: pauseDeducted,  // Temps de pause réellement déduit
+          lunchMinutes: lunchBreakEnabled ? lunchDuration : 0,
+          personType: personInfo.type
+        });
       }
-      
-      // Vérifier si c'est un jour férié
-      const dateObj = new Date(record.date);
-      const formattedDate = dateObj.toISOString().split('T')[0]; // Format YYYY-MM-DD
-      const isHoliday = holidayMap.has(formattedDate);
-      const holidayName = isHoliday ? holidayMap.get(formattedDate).name : undefined;
-      
-      // Vérifier si c'est un weekend
-      const dayOfWeek = dateObj.getDay(); // 0 = dimanche, 6 = samedi
-      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-      
-      // Vérifier si c'est une demi-journée
-      // Une demi-journée est définie comme < 60% des heures de travail normales
-      const isHalfDay = totalHours !== null && totalHours < (parameters.dailyHours * 0.6);
-      // Déterminer si c'est une demi-journée du matin ou de l'après-midi
-      let halfDayType: 'morning' | 'afternoon' | null = null;
-      if (isHalfDay && arrivalTime) {
-        // Si l'arrivée est avant midi, c'est une demi-journée du matin
-        const arrivalHour = parseInt(arrivalTime.split(':')[0]);
-        halfDayType = arrivalHour < 12 ? 'morning' : 'afternoon';
-      }
-      
-      // Vérifier si le jour actuel est un jour de travail selon la configuration
-      // MODIFICATION: Ne pas ajouter d'enregistrement s'il n'y a pas de référence (badge, événement, etc.)
-      if (!record.badgeNumber || record.events.length === 0) {
-        continue; // Passer à l'enregistrement suivant
-      }
-      
-      // MODIFICATION: Toujours considérer comme journée normale si c'est conforme à la table de paramétrage
-      // Les journées détectées comme demi-journées sont en fait des journées normales
-      const isWorkingDay = parameters.workingDays.includes(dayOfWeek);
-      if (isWorkingDay) {
-        // Forcer comme journée normale
-        // Note: Nous conservons l'info isHalfDay pour référence future si nécessaire
-      }
-      
-      // Ajouter à la liste des enregistrements
-      attendanceRecords.push({
-        date: record.date,
-        badgeNumber: record.badgeNumber,
-        firstName: record.firstName,
-        lastName: record.lastName,
-        arrivalTime,
-        departureTime,
-        arrivalReader,
-        departureReader,
-        totalHours,
-        isHoliday,
-        isContinuousDay: notes === "Journée continue",
-        isWeekend,
-        // MODIFICATION: Si c'est un jour ouvré selon la configuration, ne pas marquer comme demi-journée
-        isHalfDay: isWorkingDay ? false : isHalfDay,
-        halfDayType: isWorkingDay ? null : halfDayType,
-        holidayName,
-        notes,
-        reader: record.events.length > 0 ? record.events[0].reader : 'unknown',
-        pauseMinutes: pauseMinutes,
-        lunchMinutes: lunchMinutes,
-        events: record.events.map((e: any) => ({
-          badgeNumber: record.badgeNumber,
-          date: record.date,
-          time: e.time,
-          eventType: e.type,
-          rawEventType: e.rawEventType,
-          readerName: e.readerName || e.reader
-        }))
-      });
     }
+
+    // Calculer les statistiques
+    const stats = {
+      total: attendanceRecords.length,
+      uniqueDates: Array.from(new Set(attendanceRecords.map(record => record.date))).length,
+      uniqueEmployees: badgeNumbers.length,
+      avgPerDay: (attendanceRecords.length / Math.max(1, Array.from(new Set(attendanceRecords.map(record => record.date))).length)).toFixed(1),
+      avgPerEmployee: (attendanceRecords.length / Math.max(1, badgeNumbers.length)).toFixed(1)
+    };
     
-    // Trier les enregistrements par date
+    console.log(`[DEBUG] Statistiques: ${JSON.stringify(stats)}`);
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'attendance_view',
+      `Consultation des données d'assiduité du ${startDate} au ${endDate}`
+    );
+
+    // Trier les enregistrements par date (plus récente en premier) et par nom
     attendanceRecords.sort((a, b) => {
-      // D'abord par date
-      const dateComparison = a.date.localeCompare(b.date);
+      // D'abord par date (plus récente en premier)
+      const dateComparison = b.date.localeCompare(a.date);
       if (dateComparison !== 0) return dateComparison;
       
-      // Ensuite par heure d'arrivée (si disponible)
-      if (a.arrivalTime && b.arrivalTime) {
-        return a.arrivalTime.localeCompare(b.arrivalTime);
-      }
-      
-      // Si pas d'heure d'arrivée, trier par badge
-      return a.badgeNumber.localeCompare(b.badgeNumber);
+      // Ensuite par nom de famille
+      return a.lastName.localeCompare(b.lastName);
     });
-    
+
+    // Renvoyer les enregistrements
     return NextResponse.json(attendanceRecords);
   } catch (error) {
-    console.error('Erreur lors de la récupération des données de présence:', error);
+    console.error('Erreur lors de la récupération des données d\'assiduité:', error);
     return NextResponse.json(
-      { error: 'Une erreur est survenue lors de la récupération des données' },
+      { error: "Erreur lors de la récupération des données d'assiduité" },
       { status: 500 }
     );
   }
+}
+
+// Fonction utilitaire pour convertir une heure (format HH:MM) en minutes depuis minuit
+function convertTimeToMinutes(timeStr: string): number {
+  const [hours, minutes] = timeStr.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+/**
+ * POST /api/attendance - Enregistrer une nouvelle entrée d'assiduité manuelle
+ */
+export async function POST(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Extraire les données
+    const body = await req.json();
+    const { employeeId, date, status, notes } = body;
+
+    // Valider les données requises
+    if (!employeeId || !date || !status) {
+      return NextResponse.json(
+        { error: "Tous les champs obligatoires doivent être remplis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si l'employé existe
+    const employee = await prisma.employees.findUnique({
+      where: { id: Number(employeeId) }
+    });
+
+    if (!employee) {
+      return NextResponse.json(
+        { error: "Employé non trouvé" },
+        { status: 404 }
+      );
+    }
+
+    // Au lieu de créer une entrée dans une table attendance inexistante,
+    // créer un log d'accès manuel
+    const accessLog = await prisma.access_logs.create({
+      data: {
+        badge_number: employee.badge_number,
+        person_type: 'employee' as access_logs_person_type,
+        event_date: new Date(date),
+        event_time: new Date(), // Heure actuelle
+        event_type: status === 'PRESENT' ? 'entry' as access_logs_event_type : 'unknown' as access_logs_event_type,
+        direction: status === 'PRESENT' ? 'in' : null,
+        full_name: `${employee.first_name} ${employee.last_name}`,
+        group_name: employee.department || '',
+        raw_event_type: notes,
+        processed: true
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'attendance_create',
+      `Création manuelle d'une entrée d'assiduité pour l'employé ${employee.first_name} ${employee.last_name} (${employee.badge_number})`
+    );
+
+    // Formater la réponse pour correspondre à l'attendu
+    const attendanceRecord = {
+      id: accessLog.id,
+      date: accessLog.event_date,
+      time: accessLog.event_time,
+      badge_number: accessLog.badge_number,
+      employee: {
+        id: employee.id,
+        name: `${employee.first_name} ${employee.last_name}`,
+        employee_id: employee.employee_id,
+        department: employee.department
+      },
+      status: status,
+      notes: notes,
+      created_by: session.user.id
+    };
+
+    return NextResponse.json(attendanceRecord);
+  } catch (error) {
+    console.error('Erreur lors de la création de l\'entrée d\'assiduité:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la création de l'entrée d'assiduité" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/attendance - Mettre à jour une entrée d'assiduité
+ */
+export async function PUT(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Extraire les données
+    const body = await req.json();
+    const { id, status, notes } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "ID d'assiduité requis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si l'entrée existe
+    const existingLog = await prisma.access_logs.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingLog) {
+      return NextResponse.json(
+        { error: "Entrée d'assiduité non trouvée" },
+        { status: 404 }
+      );
+    }
+
+    // Mettre à jour l'entrée dans les logs d'accès
+    const updatedLog = await prisma.access_logs.update({
+      where: { id: Number(id) },
+      data: {
+        event_type: status === 'PRESENT' ? 'entry' as access_logs_event_type : 'unknown' as access_logs_event_type,
+        raw_event_type: notes,
+        processed: true
+      }
+    });
+
+    // Récupérer les informations de l'employé correspondant
+    const employee = await prisma.employees.findUnique({
+      where: { badge_number: updatedLog.badge_number }
+    });
+
+    // Formater la réponse
+    const attendance = {
+      id: updatedLog.id,
+      date: updatedLog.event_date,
+      time: updatedLog.event_time,
+      badge_number: updatedLog.badge_number,
+      employee: employee ? {
+        id: employee.id,
+        name: `${employee.first_name} ${employee.last_name}`,
+        employee_id: employee.employee_id,
+        department: employee.department
+      } : {
+        id: null,
+        name: updatedLog.full_name || `Employé (${updatedLog.badge_number})`,
+        employee_id: updatedLog.badge_number,
+        department: updatedLog.group_name || 'Non spécifié'
+      },
+      status: updatedLog.event_type === 'entry' ? 'PRESENT' : 'ABSENT',
+      notes: updatedLog.raw_event_type
+    };
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'attendance_update',
+      `Mise à jour d'une entrée d'assiduité pour ${attendance.employee.name}`
+    );
+
+    return NextResponse.json({ attendance });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de l\'assiduité:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la mise à jour de l'assiduité" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * Calcule les statistiques d'assiduité
+ */
+async function calculateAttendanceStats(where: any) {
+  // Récupérer les données d'accès au lieu des données d'assiduité
+  const accessLogs = await prisma.access_logs.findMany({
+    where,
+    orderBy: {
+      event_date: 'desc'
+    }
+  });
+
+  // Calculer les statistiques de base
+  const total = accessLogs.length;
+  const uniqueDates = Array.from(new Set(accessLogs.map(log => log.event_date.toISOString().split('T')[0])));
+  const uniqueEmployees = Array.from(new Set(accessLogs.map(log => log.badge_number)));
+
+  return {
+    total,
+    uniqueDates: uniqueDates.length,
+    uniqueEmployees: uniqueEmployees.length,
+    avgPerDay: uniqueDates.length > 0 ? (total / uniqueDates.length).toFixed(1) : 0,
+    avgPerEmployee: uniqueEmployees.length > 0 ? (total / uniqueEmployees.length).toFixed(1) : 0
+  };
 }
 
 function generateTestData(startDate: Date, endDate: Date): AttendanceRecord[] {
@@ -502,6 +752,7 @@ function generateTestData(startDate: Date, endDate: Date): AttendanceRecord[] {
       
       // Ajouter l'enregistrement
       testData.push({
+        _id: `${employee.badgeNumber}_${dateStr}`,
         date: dateStr,
         badgeNumber: employee.badgeNumber,
         firstName: employee.firstName,
@@ -511,32 +762,35 @@ function generateTestData(startDate: Date, endDate: Date): AttendanceRecord[] {
         arrivalReader: 'Porte principale',
         departureReader: 'Porte principale',
         totalHours,
+        formattedTotalHours: formatHours(totalHours),
         isHoliday: false,
         isContinuousDay: false,
         isWeekend,
         isHalfDay: false,
-        halfDayType: null,
+        halfDayType: undefined,
         holidayName: undefined,
-        notes: 'Données générées automatiquement',
         reader: 'Porte principale',
+        status: isWeekend ? 'WEEKEND' : 'PRESENT',
         pauseMinutes: 0,
-        lunchMinutes: 0,
+        lunchMinutes: 60,
         events: [
           {
             badgeNumber: employee.badgeNumber,
-            date: dateStr,
+            eventDate: dateStr,
             time: arrivalTime,
             eventType: 'entry',
             rawEventType: null,
-            readerName: 'Porte principale'
+            readerName: 'Porte principale',
+            _id: `entry_${employee.badgeNumber}_${dateStr}`
           },
           {
             badgeNumber: employee.badgeNumber,
-            date: dateStr,
+            eventDate: dateStr,
             time: departureTime,
             eventType: 'exit',
             rawEventType: null,
-            readerName: 'Porte principale'
+            readerName: 'Porte principale',
+            _id: `exit_${employee.badgeNumber}_${dateStr}`
           }
         ]
       });
@@ -553,7 +807,7 @@ function generateTestData(startDate: Date, endDate: Date): AttendanceRecord[] {
     if (dateComparison !== 0) return dateComparison;
     
     // Ensuite par nom de famille
-    return a.lastName!.localeCompare(b.lastName!);
+    return a.lastName.localeCompare(b.lastName);
   });
   
   return testData;

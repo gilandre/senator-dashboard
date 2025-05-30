@@ -1,204 +1,150 @@
 "use client"
 
 import { ColumnDef } from "@tanstack/react-table"
-import { MoreHorizontal, UserCog, UserMinus } from "lucide-react"
+import { MoreHorizontal, Edit, KeyRound, User as UserIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuLabel, 
-  DropdownMenuSeparator, 
-  DropdownMenuTrigger 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
+import { StatusCell } from "./status-cell"
+import { RoleCell } from "./role-cell"
 
 export type User = {
   id: string
   name: string
   email: string
-  role: string
-  status: string
+  role?: string  // Pour rétrocompatibilité
+  role_id?: number
+  role_name?: string  // Le nom du rôle depuis la relation
+  status?: string  // Pour rétrocompatibilité
+  status_id?: number
   lastLogin?: Date | string | null
-  profileId?: string        // Pour l'interface utilisateur (sélection d'un profil)
-  profileName?: string      // Pour l'affichage du nom de profil
   profileIds?: number[]     // Pour la communication avec l'API (format attendu)
+  profiles?: {id: number, name: string}[]  // Pour afficher les profils dans l'interface
+  deactivationReason?: string // Raison de la désactivation (ex: 'failed_attempts')
 }
 
-// Constants pour les statuts d'utilisateur
-export const USER_STATUSES = {
-  active: { color: "bg-green-100 text-green-800", label: "Actif" },
-  inactive: { color: "bg-gray-100 text-gray-800", label: "Inactif" },
-  suspended: { color: "bg-red-100 text-red-800", label: "Suspendu" },
-  pending: { color: "bg-yellow-100 text-yellow-800", label: "En attente" },
-}
-
-/**
- * Récupère en toute sécurité une valeur dans un objet row
- * @param row L'objet row de la table
- * @param key La clé à récupérer
- * @param defaultValue Valeur par défaut si la clé n'existe pas ou est undefined
- */
-function safeGetValue(row: any, key: string, defaultValue: any = ""): any {
-  try {
-    // Si row et row.original sont définis, essayer d'accéder à la propriété
-    if (row && row.original && key in row.original) {
-      const value = row.original[key];
-      // Vérifier si la valeur est null ou undefined
-      if (value === null || value === undefined) {
-        return defaultValue;
-      }
-      return value;
-    }
-    
-    // Si row existe mais pas row.original, essayer d'accéder directement
-    if (row && key in row) {
-      const value = row[key];
-      if (value === null || value === undefined) {
-        return defaultValue;
-      }
-      return value;
-    }
-    
-    // Si on ne peut pas accéder à la propriété, renvoyer la valeur par défaut
-    return defaultValue;
-  } catch (error) {
-    console.warn(`Erreur lors de la récupération de ${key}:`, error);
-    return defaultValue;
-  }
+// Émission d'événements pour les actions utilisateur
+const emitUserEvent = (eventName: string, user: User) => {
+  const event = new CustomEvent(eventName, { detail: user })
+  document.dispatchEvent(event)
 }
 
 export const columns: ColumnDef<User>[] = [
   {
     accessorKey: "name",
     header: "Nom",
+    cell: ({ row }) => (
+      <div className="flex items-center gap-2">
+        <UserIcon className="h-4 w-4 text-muted-foreground" />
+        <span>{row.getValue("name")}</span>
+      </div>
+    )
   },
   {
     accessorKey: "email",
-    header: "Email",
+    header: "Email"
   },
   {
-    accessorKey: "profileName",
-    header: "Profil",
+    accessorKey: "role_id",
+    header: "Rôle",
     cell: ({ row }) => {
       const user = row.original;
-      let profileName = safeGetValue(row, "profileName", "") as string;
+      return <RoleCell roleId={user.role_id} fallbackRoleCode={user.role} />;
+    }
+  },
+  {
+    accessorKey: "profiles",
+    header: "Profils",
+    cell: ({ row }) => {
+      const user = row.original
+      const profiles = user.profiles || []
       
-      // Si profileName est vide mais qu'on a profileId, on affiche l'ID au moins
-      if ((!profileName || profileName.trim() === "") && user.profileId) {
-        profileName = `Profil #${user.profileId}`;
-      }
+      if (!profiles.length) return (
+        <span className="text-muted-foreground italic text-xs">Aucun profil</span>
+      )
       
-      let color = "bg-purple-100 text-purple-800";
-      
-      if (!profileName || profileName.trim() === "") {
+      // Si plus de 3 profils, afficher un résumé
+      if (profiles.length > 3) {
         return (
-          <Badge 
-            className="font-medium bg-gray-100 text-gray-800"
-            variant="outline"
-          >
-            Non assigné
-          </Badge>
+          <div className="space-y-1">
+            <div className="flex flex-wrap gap-1">
+              {profiles.slice(0, 2).map((profile: any) => (
+                <Badge key={profile.id} variant="outline" className="bg-purple-100 text-purple-800 text-xs">
+                  {profile.name}
+                </Badge>
+              ))}
+              <Badge variant="outline" className="bg-gray-100 text-gray-800 text-xs">
+                +{profiles.length - 2} autres
+              </Badge>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {profiles.map((p: any) => p.name).join(', ')}
+            </div>
+          </div>
         )
       }
       
+      // Afficher tous les profils s'il y en a 3 ou moins
       return (
-        <Badge 
-          className={`font-medium ${color}`}
-          variant="outline"
-          title={user.profileId ? `ID: ${user.profileId}` : undefined}
-        >
-          {profileName}
-        </Badge>
+        <div className="flex flex-wrap gap-1">
+          {profiles.map((profile: any) => (
+            <Badge key={profile.id} variant="outline" className="bg-purple-100 text-purple-800 text-xs">
+              {profile.name}
+            </Badge>
+          ))}
+        </div>
       )
     }
   },
   {
-    accessorKey: "status",
+    accessorKey: "status_id",
     header: "Statut",
     cell: ({ row }) => {
-      // Récupérer le status avec gestion robuste
       const user = row.original;
-      
-      // Récupérer avec valeur par défaut 'active' pour éviter les undefined
-      const statusValue = safeGetValue(row, "status", "active");
-      
-      // Sécuriser contre les valeurs non-string
-      let status = "active";
-      try {
-        if (statusValue !== null && statusValue !== undefined) {
-          status = typeof statusValue === 'string' ? statusValue.toLowerCase() : String(statusValue).toLowerCase();
-        }
-      } catch (error) {
-        console.warn("Erreur lors du traitement du statut:", error);
-      }
-      
-      // Valeur par défaut si le statut n'est pas reconnu
-      let color = "bg-gray-100 text-gray-800";
-      let label = "Inconnu";
-      
-      // Utiliser les constantes pour un affichage cohérent
-      if (status in USER_STATUSES) {
-        const statusConfig = USER_STATUSES[status as keyof typeof USER_STATUSES];
-        color = statusConfig.color;
-        label = statusConfig.label;
-      }
+      const statusId = user.status_id;
+      const statusCode = user.status; // Pour rétrocompatibilité
+      const deactivationReason = user.deactivationReason;
       
       return (
-        <Badge 
-          className={`font-medium ${color}`}
-          variant="outline"
-        >
-          {label}
-        </Badge>
-      )
+        <StatusCell statusId={statusId} fallbackStatusCode={statusCode} deactivationReason={deactivationReason} />
+      );
     }
   },
   {
     accessorKey: "lastLogin",
     header: "Dernière connexion",
     cell: ({ row }) => {
-      const lastLogin = safeGetValue(row, "lastLogin", null);
+      const lastLogin = row.getValue("lastLogin")
       
       if (!lastLogin) {
-        return <span className="text-gray-400 text-sm">Jamais</span>
+        return <span className="text-muted-foreground italic">Jamais connecté</span>
       }
       
       try {
-        // Support de différents formats de date
-        const dateValue = typeof lastLogin === 'string' 
-          ? lastLogin 
-          : (lastLogin instanceof Date ? lastLogin.toISOString() : String(lastLogin));
-        
-        // Créer un objet Date à partir de la valeur
-        const date = new Date(dateValue);
-        
-        // Vérifier si la date est valide
+        const date = typeof lastLogin === "string" 
+          ? new Date(lastLogin) 
+          : lastLogin as Date
+          
         if (isNaN(date.getTime())) {
-          console.warn("Format de date invalide:", lastLogin);
-          return <span className="text-gray-400 text-sm">Format invalide</span>
+          return <span className="text-muted-foreground italic">Jamais connecté</span>
         }
         
-        // Afficher "il y a X temps" avec date-fns
-        return (
-          <span className="text-sm">
-            {formatDistanceToNow(date, { addSuffix: true, locale: fr })}
-            <span className="block text-xs text-gray-500">
-              {date.toLocaleDateString('fr-FR', { 
-                day: '2-digit', 
-                month: '2-digit', 
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-            </span>
-          </span>
-        )
+        return formatDistanceToNow(date, { 
+          addSuffix: true,
+          locale: fr
+        })
       } catch (error) {
-        console.error("Erreur lors du formatage de la date:", error, "Valeur:", lastLogin)
-        return <span className="text-gray-400 text-sm">Erreur de format</span>
+        console.error("Erreur lors du formatage de la date:", error)
+        return <span className="text-muted-foreground italic">Date invalide</span>
       }
     }
   },
@@ -207,42 +153,48 @@ export const columns: ColumnDef<User>[] = [
     cell: ({ row }) => {
       const user = row.original
       
+      // Récupérer le statut à partir du code de rétrocompatibilité
+      const isActive = user.status === "active";
+      
       return (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="h-8 w-8 p-0">
-              <span className="sr-only">Menu</span>
+              <span className="sr-only">Ouvrir le menu</span>
               <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuLabel>Actions</DropdownMenuLabel>
+            <DropdownMenuItem onClick={() => emitUserEvent('edit-user', user)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Modifier
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => emitUserEvent('reset-password', user)}>
+              <KeyRound className="mr-2 h-4 w-4" />
+              Réinitialiser mot de passe
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="cursor-pointer"
-              onClick={(e) => {
-                e.stopPropagation()
-                // Ce code est remplacé par l'événement onEdit défini dans la page
-                document.dispatchEvent(new CustomEvent('edit-user', { detail: user }))
-              }}
-            >
-              <UserCog className="mr-2 h-4 w-4" />
-              <span>Modifier</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              className="cursor-pointer text-red-600 dark:text-red-400 focus:text-red-600 dark:focus:text-red-400"
-              onClick={(e) => {
-                e.stopPropagation()
-                // Ce code est remplacé par l'événement onDelete défini dans la page
-                document.dispatchEvent(new CustomEvent('delete-user', { detail: user }))
-              }}
-            >
-              <UserMinus className="mr-2 h-4 w-4" />
-              <span>Supprimer</span>
-            </DropdownMenuItem>
+            {isActive ? (
+              <DropdownMenuItem 
+                onClick={() => emitUserEvent('deactivate-user', user)}
+                className="text-red-600 focus:text-red-600"
+              >
+                <span className="mr-2 h-4 w-4 flex items-center justify-center">⏸️</span>
+                Désactiver
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem 
+                onClick={() => emitUserEvent('activate-user', user)}
+                className="text-green-600 focus:text-green-600"
+              >
+                <span className="mr-2 h-4 w-4 flex items-center justify-center">▶️</span>
+                Activer
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )
-    },
-  },
-] 
+    }
+  }
+]

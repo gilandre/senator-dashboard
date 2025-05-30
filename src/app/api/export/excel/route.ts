@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import ExcelJS from 'exceljs';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { ExcelUtility } from '@/lib/utils/excel';
 
 // Define route segment config with proper format
 export const dynamic = 'force-dynamic';
@@ -18,35 +18,17 @@ export async function POST(req: NextRequest) {
       to: dateRange?.to ? new Date(dateRange.to) : undefined
     };
     
-    // Créer un nouveau workbook
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Senator InvesTech';
-    workbook.lastModifiedBy = 'Senator InvesTech';
-    workbook.created = new Date();
-    workbook.modified = new Date();
+    // Créer une instance de notre utilitaire Excel
+    const excelUtility = new ExcelUtility();
     
     // Ajouter une feuille pour le résumé
-    const summarySheet = workbook.addWorksheet('Résumé');
+    const summarySheet = excelUtility.addWorksheet('Résumé');
     
     // Configurer la mise en page
-    summarySheet.pageSetup.paperSize = 9; // A4
-    summarySheet.pageSetup.orientation = 'portrait';
-    summarySheet.pageSetup.margins = {
-      left: 0.7, right: 0.7,
-      top: 0.75, bottom: 0.75,
-      header: 0.3, footer: 0.3
-    };
+    excelUtility.setupPageLayout(summarySheet);
     
     // Mettre en forme le titre
-    summarySheet.mergeCells('A1:G1');
-    const titleCell = summarySheet.getCell('A1');
-    titleCell.value = 'Rapport de Temps de Présence';
-    titleCell.font = {
-      size: 16,
-      bold: true,
-      color: { argb: '007B65' }
-    };
-    titleCell.alignment = { horizontal: 'center' };
+    excelUtility.addTitle(summarySheet, 'A1:G1', 'Rapport de Temps de Présence');
     
     // Mettre en forme la période
     summarySheet.mergeCells('A2:G2');
@@ -90,27 +72,13 @@ export async function POST(req: NextRequest) {
     // Ajouter les données quotidiennes
     if (data?.daily && data.daily.length > 0) {
       // Créer une feuille pour les données quotidiennes
-      const dailySheet = workbook.addWorksheet('Données quotidiennes');
+      const dailySheet = excelUtility.addWorksheet('Données quotidiennes');
       
       // Configurer la mise en page
-      dailySheet.pageSetup.paperSize = 9; // A4
-      dailySheet.pageSetup.orientation = 'portrait';
-      dailySheet.pageSetup.margins = {
-        left: 0.7, right: 0.7,
-        top: 0.75, bottom: 0.75,
-        header: 0.3, footer: 0.3
-      };
+      excelUtility.setupPageLayout(dailySheet);
       
       // Titre
-      dailySheet.mergeCells('A1:D1');
-      const dailyTitleCell = dailySheet.getCell('A1');
-      dailyTitleCell.value = 'Données quotidiennes de présence';
-      dailyTitleCell.font = {
-        size: 16,
-        bold: true,
-        color: { argb: '007B65' }
-      };
-      dailyTitleCell.alignment = { horizontal: 'center' };
+      excelUtility.addTitle(dailySheet, 'A1:D1', 'Données quotidiennes de présence');
       
       // Période
       dailySheet.mergeCells('A2:D2');
@@ -128,21 +96,7 @@ export async function POST(req: NextRequest) {
       
       // En-têtes
       const headers = ['Date', 'Nombre d\'employés', 'Durée totale (h)', 'Temps moyen par employé (h)'];
-      const headerRow = dailySheet.addRow(headers);
-      headerRow.font = { bold: true };
-      headerRow.eachCell(cell => {
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'F5F5F5' }
-        };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'DDDDDD' } },
-          left: { style: 'thin', color: { argb: 'DDDDDD' } },
-          bottom: { style: 'thin', color: { argb: 'DDDDDD' } },
-          right: { style: 'thin', color: { argb: 'DDDDDD' } }
-        };
-      });
+      excelUtility.addHeaderRow(dailySheet, headers);
       
       // Données
       data.daily.forEach((day: any) => {
@@ -172,27 +126,13 @@ export async function POST(req: NextRequest) {
     // Ajouter les données détaillées si disponibles
     if (data?.detailedLogs && data.detailedLogs.length > 0) {
       // Créer une feuille pour les données détaillées
-      const detailsSheet = workbook.addWorksheet('Données détaillées');
+      const detailsSheet = excelUtility.addWorksheet('Données détaillées');
       
       // Configurer la mise en page
-      detailsSheet.pageSetup.paperSize = 9; // A4
-      detailsSheet.pageSetup.orientation = 'portrait';
-      detailsSheet.pageSetup.margins = {
-        left: 0.7, right: 0.7,
-        top: 0.75, bottom: 0.75,
-        header: 0.3, footer: 0.3
-      };
+      excelUtility.setupPageLayout(detailsSheet);
       
       // Titre
-      detailsSheet.mergeCells('A1:G1');
-      const detailsTitleCell = detailsSheet.getCell('A1');
-      detailsTitleCell.value = 'Données détaillées de présence';
-      detailsTitleCell.font = {
-        size: 16,
-        bold: true,
-        color: { argb: '007B65' }
-      };
-      detailsTitleCell.alignment = { horizontal: 'center' };
+      excelUtility.addTitle(detailsSheet, 'A1:G1', 'Données détaillées de présence');
       
       // Période
       detailsSheet.mergeCells('A2:G2');
@@ -210,21 +150,7 @@ export async function POST(req: NextRequest) {
       
       // En-têtes
       const headers = ['Date', 'Employé', 'Badge', 'Groupe', 'Entrée', 'Sortie', 'Durée (h)'];
-      const headerRow = detailsSheet.addRow(headers);
-      headerRow.font = { bold: true };
-      headerRow.eachCell(cell => {
-        cell.fill = {
-          type: 'pattern',
-          pattern: 'solid',
-          fgColor: { argb: 'F5F5F5' }
-        };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'DDDDDD' } },
-          left: { style: 'thin', color: { argb: 'DDDDDD' } },
-          bottom: { style: 'thin', color: { argb: 'DDDDDD' } },
-          right: { style: 'thin', color: { argb: 'DDDDDD' } }
-        };
-      });
+      excelUtility.addHeaderRow(detailsSheet, headers);
       
       // Données
       data.detailedLogs.forEach((log: any) => {
@@ -248,23 +174,23 @@ export async function POST(req: NextRequest) {
       });
       
       // Ajuster les largeurs des colonnes
-      detailsSheet.getColumn('A').width = 12; // Date
+      detailsSheet.getColumn('A').width = 15; // Date
       detailsSheet.getColumn('B').width = 25; // Employé
       detailsSheet.getColumn('C').width = 15; // Badge
-      detailsSheet.getColumn('D').width = 20; // Groupe
+      detailsSheet.getColumn('D').width = 15; // Groupe
       detailsSheet.getColumn('E').width = 15; // Entrée
       detailsSheet.getColumn('F').width = 15; // Sortie
       detailsSheet.getColumn('G').width = 15; // Durée
     }
     
-    // Convertir le workbook en buffer
-    const buffer = await workbook.xlsx.writeBuffer();
+    // Générer le fichier Excel
+    const buffer = await excelUtility.toBuffer();
     
-    // Renvoyer le fichier Excel généré
+    // Renvoyer la réponse
     return new NextResponse(buffer, {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="rapport_presence_${new Date().toISOString().split('T')[0]}.xlsx"`
+        'Content-Disposition': 'attachment; filename=rapport-presence.xlsx'
       }
     });
   } catch (error) {

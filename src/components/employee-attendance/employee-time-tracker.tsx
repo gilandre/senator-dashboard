@@ -61,6 +61,7 @@ import { DateRange } from "react-day-picker";
 import { cn } from "@/lib/utils";
 import { toast } from "@/components/ui/use-toast";
 import { Toaster } from "@/components/ui/toaster";
+import { ExportDialog } from '@/components/ui/export-dialog';
 
 // Interfaces
 interface IEventDetail {
@@ -114,7 +115,8 @@ export function EmployeeTimeTracker() {
   const [exporting, setExporting] = useState(false);
   const [attendanceData, setAttendanceData] = useState<IAttendanceRecord[]>([]);
   const [filteredData, setFilteredData] = useState<IAttendanceRecord[]>([]);
-  const [employeeFilter, setEmployeeFilter] = useState<string | null>(null);
+  const [employeeFilter, setEmployeeFilter] = useState<string | undefined>(undefined);
+  const [departmentFilter, setDepartmentFilter] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'name' | 'badge' | 'both'>('both');
   const [dateRange, setDateRange] = useState<DateRange>({
@@ -141,6 +143,7 @@ export function EmployeeTimeTracker() {
   }>({ key: 'date', direction: 'descending' });
   const [isDetailDialogOpen, setIsDetailDialogOpen] = useState(false);
   const [detailRecord, setDetailRecord] = useState<IAttendanceRecord | null>(null);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   // Récupérer les paramètres de l'URL
   useEffect(() => {
@@ -400,145 +403,63 @@ export function EmployeeTimeTracker() {
   };
 
   // Export functions
-  const exportToCSV = async () => {
-    if (!filteredData.length || !dateRange.from || !dateRange.to) return;
+  const exportRawData = async (exportFormat: 'csv' | 'excel') => {
+    if (!dateRange.from || !dateRange.to) return;
 
     setExporting(true);
     try {
-      const response = await axios.post('/api/export/csv', {
-        data: {
-          daily: filteredData.map(record => ({
-            date: record.date,
-            count: 1,
-            duration: record.totalHours * 60, // Convertir en minutes
-            breakTimeDeducted: record.lunchMinutes || 0
-          })),
-          summary: {
-            totalEmployees: 1,
-            avgEmployeePerDay: 1,
-            totalHours: filteredData.reduce((sum, record) => sum + (record.totalHours || 0), 0)
-          }
-        },
-        options: {
-          netStatistics: true
-        }
-      }, {
+      // Formater les dates en YYYY-MM-DD
+      const formattedStartDate = format(dateRange.from, 'yyyy-MM-dd');
+      const formattedEndDate = format(dateRange.to, 'yyyy-MM-dd');
+      
+      // Construire l'URL de l'API d'export avec les paramètres
+      let apiUrl = `/api/export/data?startDate=${formattedStartDate}&endDate=${formattedEndDate}&format=${exportFormat}`;
+      
+      // Ajouter des filtres additionnels si nécessaires
+      if (employeeFilter) {
+        apiUrl += `&employeeId=${employeeFilter}`;
+      }
+      
+      if (searchQuery && filterType) {
+        apiUrl += `&searchQuery=${encodeURIComponent(searchQuery)}&filterType=${filterType}`;
+      }
+      
+      // Faire la requête en mode blob pour télécharger le fichier
+      const response = await axios.get(apiUrl, {
         responseType: 'blob'
       });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      
+      // Créer un objet URL et un lien pour télécharger le fichier
+      const fileUrl = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       const dateStr = `${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`;
-      link.href = url;
-      link.download = `export_presence_${dateStr}.csv`;
+      
+      // Définir les attributs du lien
+      link.href = fileUrl;
+      link.download = `presence_data_${dateStr}.${exportFormat === 'csv' ? 'csv' : 'xlsx'}`;
+      
+      // Ajouter, cliquer et supprimer le lien
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error exporting to CSV:', error);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const exportToExcel = async () => {
-    if (!filteredData.length || !dateRange.from || !dateRange.to) return;
-
-    setExporting(true);
-    try {
-      // Calculer le nombre d'employés uniques
-      const uniqueEmployees = new Set(filteredData.map(record => record.badgeNumber)).size;
       
-      // Calculer le nombre de jours uniques
-      const uniqueDays = new Set(filteredData.map(record => record.date)).size;
+      // Nettoyer l'URL
+      window.URL.revokeObjectURL(fileUrl);
       
-      // Calculer les statistiques par jour
-      const dailyStats = filteredData.reduce((acc, record) => {
-        const date = record.date;
-        if (!acc[date]) {
-          acc[date] = {
-            count: 0,
-            duration: 0,
-            breakTimeDeducted: 0
-          };
-        }
-        
-        // Calculer la durée nette (avec déduction des pauses)
-        let netDuration = record.totalHours * 60; // Convertir en minutes
-        if (record.arrivalTime && record.departureTime) {
-          try {
-            const [arrivalHours, arrivalMinutes] = record.arrivalTime.split(':').map(Number);
-            const [departureHours, departureMinutes] = record.departureTime.split(':').map(Number);
-            
-            const arrivalTotalMinutes = arrivalHours * 60 + arrivalMinutes;
-            const departureTotalMinutes = departureHours * 60 + departureMinutes;
-            
-            // Calculer la différence en minutes
-            let totalMinutes = departureTotalMinutes - arrivalTotalMinutes;
-            
-            // Gérer le cas des journées continues
-            if (totalMinutes < 0 && record.isContinuousDay) {
-              totalMinutes = (24 * 60 - arrivalTotalMinutes) + departureTotalMinutes;
-            }
-            
-            // Déduire la pause déjeuner
-            const lunchMinutes = record.lunchMinutes || 0;
-            netDuration = totalMinutes - lunchMinutes;
-          } catch (error) {
-            console.error('Erreur de calcul des heures nettes pour l\'export:', error);
-          }
-        }
-        
-        acc[date].count++;
-        acc[date].duration += netDuration;
-        acc[date].breakTimeDeducted += (record.lunchMinutes || 0);
-        
-        return acc;
-      }, {} as { [key: string]: { count: number; duration: number; breakTimeDeducted: number } });
-      
-      // Convertir les statistiques quotidiennes en tableau
-      const dailyArray = Object.entries(dailyStats).map(([date, stats]) => ({
-        date,
-        count: stats.count,
-        duration: stats.duration,
-        breakTimeDeducted: stats.breakTimeDeducted
-      }));
-      
-      // Calculer les totaux
-      const totalHours = dailyArray.reduce((sum, day) => sum + (day.duration / 60), 0);
-      const avgEmployeesPerDay = dailyArray.reduce((sum, day) => sum + day.count, 0) / uniqueDays;
-      
-      const response = await axios.post('/api/export/excel', {
-        data: {
-          daily: dailyArray,
-          summary: {
-            totalEmployees: uniqueEmployees,
-            avgEmployeePerDay: parseFloat(avgEmployeesPerDay.toFixed(2)),
-            totalHours: parseFloat(totalHours.toFixed(2))
-          }
-        },
-        options: {
-          netStatistics: true
-        },
-        filename: `export_presence_${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`,
-        sheetName: 'Données de présence',
-        title: `Rapport de présence du ${format(dateRange.from, 'dd/MM/yyyy')} au ${format(dateRange.to, 'dd/MM/yyyy')}`
-      }, {
-        responseType: 'blob'
+      // Afficher un toast de succès
+      toast({
+        title: "Export réussi",
+        description: `Les données ont été exportées au format ${exportFormat.toUpperCase()}.`,
+        duration: 3000
       });
-
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      const dateStr = `${format(dateRange.from, 'yyyyMMdd')}_${format(dateRange.to, 'yyyyMMdd')}`;
-      link.href = url;
-      link.download = `export_presence_${dateStr}.xlsx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
     } catch (error) {
-      console.error('Error exporting to Excel:', error);
+      console.error(`Erreur lors de l'export au format ${exportFormat}:`, error);
+      toast({
+        title: "Erreur d'export",
+        description: `Une erreur est survenue lors de l'export des données.`,
+        variant: "destructive",
+        duration: 3000
+      });
     } finally {
       setExporting(false);
     }
@@ -740,15 +661,11 @@ export function EmployeeTimeTracker() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>Exporter</DropdownMenuLabel>
+                  <DropdownMenuLabel>Exporter les données</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={exportToCSV} disabled={exporting}>
+                  <DropdownMenuItem onClick={() => setExportDialogOpen(true)}>
                     <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    <span>Exporter en CSV</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={exportToExcel} disabled={exporting}>
-                    <FileSpreadsheet className="mr-2 h-4 w-4" />
-                    <span>Exporter en Excel</span>
+                    <span>Exporter les données détaillées</span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -1014,7 +931,7 @@ export function EmployeeTimeTracker() {
             <Button 
               variant="outline" 
               size="sm"
-              onClick={() => setEmployeeFilter(null)}
+              onClick={() => setEmployeeFilter(undefined)}
             >
               Réinitialiser le filtre employé
             </Button>
@@ -1153,6 +1070,30 @@ export function EmployeeTimeTracker() {
           </DialogHeader>
         </DialogContent>
       </Dialog>
+      
+      <ExportDialog
+        isOpen={exportDialogOpen}
+        onClose={() => setExportDialogOpen(false)}
+        title="Exporter les données de présence"
+        description="Exportez les données détaillées de présence pour la période sélectionnée"
+        dateRange={dateRange}
+        filters={{
+          employeeId: employeeFilter || undefined,
+          department: departmentFilter || undefined
+        }}
+        exportTypes={[
+          {
+            id: 'detailed',
+            name: 'Données détaillées',
+            description: 'Exporte tous les événements de badgeage jour par jour sans agrégation'
+          },
+          {
+            id: 'summary',
+            name: 'Récapitulatif',
+            description: 'Exporte un résumé par jour et par employé (premier et dernier badgeage)'
+          }
+        ]}
+      />
       
       <Toaster />
     </div>

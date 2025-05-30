@@ -99,9 +99,103 @@ export function formatDuration(minutes: number): string {
 }
 
 export function formatPercentage(value: number): string {
+  if (isNaN(value)) return '0%';
   return `${value.toFixed(1)}%`;
 }
 
-export function formatHours(value: number): string {
-  return `${value.toFixed(1)} h`;
+export function formatHours(hours: number): string {
+  if (isNaN(hours)) return '0h00';
+  
+  const wholeHours = Math.floor(hours);
+  const minutes = Math.round((hours - wholeHours) * 60);
+  return `${wholeHours}h${minutes.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Vérifie la cohérence des données entre les détails et les visualisations graphiques
+ * 
+ * @param detailedData Données détaillées (tableau)
+ * @param graphData Données des graphiques
+ * @param summaryData Données de résumé
+ * @returns Object contenant des informations sur la cohérence et les éventuelles différences
+ */
+export function validateDataConsistency(
+  detailedData: PresenceData,
+  graphData: any,
+  summaryData: any
+): { 
+  isConsistent: boolean;
+  differences: Array<{ field: string, detailedValue: any, graphValue: any, difference: number }>
+} {
+  const differences: Array<{ field: string, detailedValue: any, graphValue: any, difference: number }> = [];
+  
+  // Vérifier la cohérence des données journalières
+  if (graphData?.dailyData && detailedData?.daily) {
+    // Vérifier que le nombre total de jours correspond
+    if (graphData.dailyData.length !== detailedData.daily.length) {
+      differences.push({
+        field: 'dailyDataCount',
+        detailedValue: detailedData.daily.length,
+        graphValue: graphData.dailyData.length,
+        difference: Math.abs(detailedData.daily.length - graphData.dailyData.length)
+      });
+    }
+    
+    // Vérifier la somme des heures totales
+    const detailedTotalHours = detailedData.daily.reduce((sum, day) => sum + ((day.duration || 0) / 60), 0);
+    const graphTotalHours = graphData.dailyData.reduce((sum, day) => sum + (day.totalHours || 0), 0);
+    
+    if (Math.abs(detailedTotalHours - graphTotalHours) > 0.1) { // Tolérance de 0.1h (6 minutes)
+      differences.push({
+        field: 'totalHours',
+        detailedValue: detailedTotalHours.toFixed(2),
+        graphValue: graphTotalHours.toFixed(2),
+        difference: Math.abs(detailedTotalHours - graphTotalHours)
+      });
+    }
+    
+    // Vérifier la somme des employés
+    const detailedTotalEmployees = detailedData.daily.reduce((sum, day) => sum + (day.count || 0), 0);
+    const graphTotalEmployees = graphData.dailyData.reduce((sum, day) => sum + (day.employeeCount || 0), 0);
+    
+    if (detailedTotalEmployees !== graphTotalEmployees) {
+      differences.push({
+        field: 'totalEmployees',
+        detailedValue: detailedTotalEmployees,
+        graphValue: graphTotalEmployees,
+        difference: Math.abs(detailedTotalEmployees - graphTotalEmployees)
+      });
+    }
+  }
+  
+  // Vérifier les données de résumé
+  if (summaryData && detailedData?.summary) {
+    // Vérifier le nombre total d'employés
+    if (summaryData.totalEmployees !== detailedData.summary.totalEmployees) {
+      differences.push({
+        field: 'summaryTotalEmployees',
+        detailedValue: detailedData.summary.totalEmployees,
+        graphValue: summaryData.totalEmployees,
+        difference: Math.abs(detailedData.summary.totalEmployees - summaryData.totalEmployees)
+      });
+    }
+    
+    // Vérifier les heures totales
+    const summaryTotalHours = summaryData.totalHours || 0;
+    const detailedSummaryTotalHours = detailedData.summary.totalHours || 0;
+    
+    if (Math.abs(summaryTotalHours - detailedSummaryTotalHours) > 0.1) {
+      differences.push({
+        field: 'summaryTotalHours',
+        detailedValue: detailedSummaryTotalHours.toFixed(2),
+        graphValue: summaryTotalHours.toFixed(2),
+        difference: Math.abs(detailedSummaryTotalHours - summaryTotalHours)
+      });
+    }
+  }
+  
+  return {
+    isConsistent: differences.length === 0,
+    differences
+  };
 } 

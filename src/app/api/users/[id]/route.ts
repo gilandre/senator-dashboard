@@ -11,11 +11,19 @@ import { AuthLogger } from '@/lib/security/authLogger';
 // Schéma de validation pour la mise à jour d'un utilisateur
 const updateUserSchema = z.object({
   name: z.string().min(3, "Le nom doit contenir au moins 3 caractères").optional(),
-  email: z.string().email("Format d'email invalide").optional(), 
+  email: z.string().email("Format d'email invalide").optional(),
+  role_id: z.number().optional(),
   role: z.enum(['admin', 'operator', 'viewer', 'user']).optional(),
-  status: z.enum(['active', 'inactive', 'suspended']).optional(),
+  status_id: z.number().optional(),
+  status: z.enum(['active', 'inactive']).optional(),
   first_login: z.boolean().optional(),
   profileIds: z.array(z.number()).optional()
+});
+
+// Schéma de validation pour le changement de mot de passe
+const changePasswordSchema = z.object({
+  currentPassword: z.string(),
+  newPassword: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères")
 });
 
 /**
@@ -23,7 +31,7 @@ const updateUserSchema = z.object({
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     // Vérification de l'authentification
@@ -32,19 +40,20 @@ export async function GET(
       return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
 
-    const userId = Number(params.id);
+    // Utiliser params.id de manière sûre
+    const userId = Number(context.params.id);
     if (isNaN(userId)) {
       return NextResponse.json({ error: "ID d'utilisateur invalide" }, { status: 400 });
     }
 
-    // Corriger la vérification des permissions - utiliser le type any pour session temporairement
-    const isOwnProfile = String(session.user.id) === String(userId);
-    if (!(session.user.role === 'admin') && !isOwnProfile) {
+    // Vérifier les permissions
+    const isOwnProfile = String(session?.user?.id) === String(userId);
+    if (!isAdmin(session as any) && !isOwnProfile) {
       return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
 
     // Récupérer l'utilisateur
-    const user = await prisma.user.findUnique({
+    const user = await prisma.users.findUnique({
       where: { id: userId },
       select: {
         id: true,
@@ -55,7 +64,6 @@ export async function GET(
         first_login: true,
         created_at: true,
         updated_at: true,
-        // Supprimer les champs non reconnus
         user_profiles: {
           select: {
             profile: {
@@ -75,40 +83,18 @@ export async function GET(
     }
 
     // Transformer les données pour le retour
-    const profiles = user.user_profiles.map(up => up.profile);
+    const profiles = user.user_profiles?.map(up => up.profile) || [];
     const profileIds = profiles.map(p => p.id);
-    const profileNames = profiles.map(p => p.name);
     
-    // Récupérer la dernière connexion depuis les logs d'authentification
-    const lastLogin = await AuthLogger.getLastLoginDate(userId);
-    
-    const userData = {
+    return NextResponse.json({
       ...user,
-      user_profiles: undefined, // Supprimer le format d'origine
-      profiles, // Ajouter le format simplifié
-      profileIds, // Ajouter les IDs de profil dans le format attendu
-      profileNames, // Ajouter les noms de profil dans le format attendu
-      status: user.status || 'active', // S'assurer que le statut est défini
-      lastLogin // Utiliser la valeur récupérée des logs d'authentification
-    };
-
-    // Journaliser la consultation du profil
-    if (!isOwnProfile) {
-      await SecurityIncidentService.logIncident(
-        'admin_action',
-        `Consultation du profil utilisateur: ${user.email}`,
-        req.headers.get('x-forwarded-for') || 'unknown',
-        'info',
-        session.user?.id ? String(session.user.id) : undefined,
-        session.user?.email || ''
-      );
-    }
-
-    return NextResponse.json(userData);
-  } catch (error: any) {
+      profileIds,
+      profiles
+    });
+  } catch (error) {
     console.error('Erreur lors de la récupération de l\'utilisateur:', error);
     return NextResponse.json(
-      { error: "Erreur serveur lors de la récupération de l'utilisateur" },
+      { error: "Erreur lors de la récupération de l'utilisateur" },
       { status: 500 }
     );
   }
@@ -119,23 +105,24 @@ export async function GET(
  */
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
-    // Vérification de l'authentification
+    // Vérifier l'authentification
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Non autorisé" }, { status: 401 });
     }
 
-    const userId = Number(params.id);
+    // Utiliser params.id de manière sûre
+    const userId = Number(context.params.id);
     if (isNaN(userId)) {
       return NextResponse.json({ error: "ID d'utilisateur invalide" }, { status: 400 });
     }
 
-    // Corriger la vérification des permissions - utiliser le type any pour session temporairement
-    const isOwnProfile = String(session.user.id) === String(userId);
-    if (!(session.user.role === 'admin') && !isOwnProfile) {
+    // Vérifier les permissions
+    const isOwnProfile = String(session?.user?.id) === String(userId);
+    if (!isAdmin(session as any) && !isOwnProfile) {
       return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
 
@@ -151,10 +138,10 @@ export async function PUT(
       );
     }
     
-    const { name, email, role, status, first_login, profileIds } = validationResult.data;
+    const { name, email, role_id, role, status_id, status, first_login, profileIds } = validationResult.data;
 
     // Vérifier si l'utilisateur existe
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.users.findUnique({
       where: { id: userId }
     });
 
@@ -164,7 +151,7 @@ export async function PUT(
 
     // Si on modifie l'email, vérifier qu'il n'est pas déjà utilisé
     if (email && email !== existingUser.email) {
-      const emailExists = await prisma.user.findUnique({
+      const emailExists = await prisma.users.findUnique({
         where: { email }
       });
 
@@ -176,77 +163,152 @@ export async function PUT(
       }
     }
 
-    // Limiter les champs que les non-admins peuvent modifier sur leur propre profil
-    let updateData: any = {};
-    
-    if (session.user.role === 'admin') {
-      // Les admins peuvent tout modifier
-      if (name !== undefined) updateData.name = name;
-      if (email !== undefined) updateData.email = email;
-      if (role !== undefined) updateData.role = role;
-      if (status !== undefined) updateData.status = status;
-      if (first_login !== undefined) updateData.first_login = first_login;
-    } else if (isOwnProfile) {
-      // Les utilisateurs ne peuvent changer que leur nom
-      if (name !== undefined) updateData.name = name;
-    }
-
-    // Mise à jour de l'horodatage
-    updateData.updated_at = new Date();
-
-    // Mise à jour de l'utilisateur
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        first_login: true,
-        created_at: true,
-        updated_at: true
-      }
-    });
-
-    // Mettre à jour les associations de profils si spécifiées (admin uniquement)
-    if (session.user.role === 'admin' && profileIds !== undefined) {
-      // Supprimer toutes les associations existantes
-      await prisma.userProfile.deleteMany({
-        where: { user_id: userId }
-      });
-
-      // Créer les nouvelles associations
-      if (profileIds.length > 0) {
-        await Promise.all(profileIds.map(profileId =>
-          prisma.userProfile.create({
+    // Exécuter les opérations dans une transaction
+    const updatedUser = await prisma.$transaction(async (tx) => {
+      if (profileIds) {
+        // Supprimer tous les profils existants
+        await tx.userProfile.deleteMany({
+          where: { user_id: userId }
+        });
+        
+        // Ajouter les nouveaux profils
+        for (const profileId of profileIds) {
+          await tx.userProfile.create({
             data: {
               user_id: userId,
               profile_id: profileId
             }
-          })
-        ));
+          });
+        }
       }
+      
+      // Construire les données de mise à jour
+      const updateData: any = {
+        updated_at: new Date()
+      };
+      
+      if (name) updateData.name = name;
+      if (email) updateData.email = email;
+      if (first_login !== undefined) updateData.first_login = first_login;
+      
+      // Si role_id est fourni, mettre à jour role et role_id
+      if (role_id) {
+        // Récupérer le rôle correspondant à l'ID
+        const roleRecord = await prisma.roles.findUnique({
+          where: { id: role_id }
+        });
+        
+        if (roleRecord) {
+          // Mise à jour synchronisée de role et role_id
+          updateData.role = roleRecord.name as any; // Cast en any pour éviter l'erreur de type
+          updateData.role_id = role_id;
+          
+          console.log("Mise à jour utilisateur avec le rôle:", {
+            role: roleRecord.name,
+            role_id: role_id
+          });
+        }
+      }
+      // Si seul role est fourni, rechercher le role_id correspondant
+      else if (role) {
+        // Vérifier si le role est une valeur valide pour l'enum
+        if (['admin', 'operator', 'viewer', 'user'].includes(role)) {
+          // Rechercher l'ID du rôle correspondant
+          const roleRecord = await prisma.roles.findFirst({
+            where: { name: role }
+          });
+          
+          if (roleRecord) {
+            // Mise à jour synchronisée de role et role_id
+            updateData.role = role as any; // Cast en any pour éviter l'erreur de type
+            updateData.role_id = roleRecord.id;
+            
+            console.log("Mise à jour utilisateur avec le rôle par nom:", {
+              role: role,
+              role_id: roleRecord.id
+            });
+          }
+        }
+      }
+      
+      if (status_id) {
+        // Pour l'instant, utilisons une mise à jour SQL directe pour status_id
+        await tx.$executeRaw`UPDATE users SET status_id = ${status_id} WHERE id = ${userId}`;
+      } else if (status) {
+        // Mettre à jour le champ status (enum)
+        await tx.users.update({
+          where: { id: userId },
+          data: { status }
+        });
+        
+        // Si un status est fourni, essayer de trouver l'ID correspondant dans reference_data
+        try {
+          const statusRef = await tx.$queryRawUnsafe(
+            `SELECT id FROM reference_data WHERE type = ? AND code = ? AND module = ?`,
+            'status',
+            status,
+            'users'
+          );
+          
+          if (Array.isArray(statusRef) && statusRef.length > 0) {
+            await tx.$executeRaw`UPDATE users SET status_id = ${statusRef[0].id} WHERE id = ${userId}`;
+          }
+        } catch (error) {
+          console.error('Erreur lors de la récupération du status_id:', error);
+        }
+      }
+      
+      // Récupérer l'utilisateur mis à jour avec une requête SQL directe pour inclure tous les champs
+      const updatedUserData = await tx.$queryRaw`
+        SELECT 
+          u.id, u.name, u.email, u.role, u.status, u.first_login, u.updated_at,
+          u.role_id, u.status_id
+        FROM users u
+        WHERE u.id = ${userId}
+      `;
+      
+      return Array.isArray(updatedUserData) && updatedUserData.length > 0 
+        ? updatedUserData[0] 
+        : null;
+    });
+
+    if (!updatedUser) {
+      return NextResponse.json({ error: "Erreur lors de la mise à jour de l'utilisateur" }, { status: 500 });
     }
 
-    // Journaliser la mise à jour
-    await SecurityIncidentService.logIncident(
-      session.user.role === 'admin' ? 'admin_action' : 'admin_action',
-      `Utilisateur mis à jour: ${updatedUser.email}`,
-      req.headers.get('x-forwarded-for') || 'unknown',
-      'info',
-      session.user?.id ? String(session.user.id) : undefined,
-      session.user?.email || ''
+    // Récupérer les profils de l'utilisateur
+    const userProfiles = await prisma.userProfile.findMany({
+      where: { user_id: userId },
+      include: {
+        profile: {
+          select: {
+            id: true,
+            name: true
+          }
+        }
+      }
+    });
+
+    const profiles = userProfiles.map(up => up.profile);
+    const userProfileIds = profiles.map(p => p.id);
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      "update_user",
+      `users/${userId}`,
+      { role: updatedUser.role, status: updatedUser.status }
     );
 
     return NextResponse.json({
-      user: updatedUser,
-      message: "Utilisateur mis à jour avec succès"
+      ...updatedUser,
+      userProfileIds,
+      profiles
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Erreur lors de la mise à jour de l\'utilisateur:', error);
     return NextResponse.json(
-      { error: "Erreur serveur lors de la mise à jour de l'utilisateur" },
+      { error: "Erreur lors de la mise à jour de l'utilisateur" },
       { status: 500 }
     );
   }
@@ -257,7 +319,7 @@ export async function PUT(
  */
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: { id: string } }
 ) {
   try {
     // Vérification de l'authentification
@@ -266,73 +328,66 @@ export async function DELETE(
       return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
 
-    // Seuls les admins peuvent supprimer des utilisateurs
-    if (!(session.user.role === 'admin')) {
+    // Seuls les admins peuvent désactiver des utilisateurs
+    if (!isAdmin(session as any)) {
       return NextResponse.json({ error: "Permission refusée" }, { status: 403 });
     }
 
-    const userId = Number(params.id);
+    // Utiliser params.id de manière sûre
+    const userId = Number(context.params.id);
     if (isNaN(userId)) {
       return NextResponse.json({ error: "ID d'utilisateur invalide" }, { status: 400 });
     }
 
-    // Vérifier si l'utilisateur existe
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
-    }
-
-    // Vérifier que l'admin ne se supprime pas lui-même
-    if (Number(userId) === Number(session.user.id)) {
+    // Empêcher la désactivation de son propre compte
+    if (String(session.user.id) === String(userId)) {
       return NextResponse.json(
-        { error: "Vous ne pouvez pas supprimer votre propre compte" },
+        { error: "Vous ne pouvez pas désactiver votre propre compte" },
         { status: 400 }
       );
     }
 
-    // Supprimer d'abord toutes les associations
-    await prisma.userProfile.deleteMany({
-      where: { user_id: userId }
-    });
-
-    // Supprimer l'historique des mots de passe
-    await prisma.password_history.deleteMany({
-      where: { user_id: userId }
-    });
-
-    // Supprimer l'utilisateur
-    await prisma.user.delete({
+    // Vérifier si l'utilisateur existe
+    const existingUser = await prisma.users.findUnique({
       where: { id: userId }
     });
 
-    // Journaliser la suppression
-    await SecurityIncidentService.logIncident(
-      'admin_action',
-      `Utilisateur supprimé: ${user.email}`,
-      req.headers.get('x-forwarded-for') || 'unknown',
-      'warning',
-      session.user?.id ? String(session.user.id) : undefined,
-      session.user?.email || ''
+    if (!existingUser) {
+      return NextResponse.json({ error: "Utilisateur non trouvé" }, { status: 404 });
+    }
+
+    // Désactiver l'utilisateur plutôt que de le supprimer
+    await prisma.users.update({
+      where: { id: userId },
+      data: {
+        status: 'inactive',
+        updated_at: new Date()
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      "deactivate_user", 
+      `users/${userId}`,
+      { newStatus: "inactive" }
     );
 
-    return NextResponse.json({
-      message: "Utilisateur supprimé avec succès"
-    });
-  } catch (error: any) {
-    console.error('Erreur lors de la suppression de l\'utilisateur:', error);
+    return NextResponse.json({ message: "Utilisateur désactivé avec succès" });
+  } catch (error) {
+    console.error('Erreur lors de la désactivation de l\'utilisateur:', error);
     return NextResponse.json(
-      { error: "Erreur serveur lors de la suppression de l'utilisateur" },
+      { error: "Erreur lors de la désactivation de l'utilisateur" },
       { status: 500 }
     );
   }
 }
 
 // PATCH /api/users/[id] - Mettre à jour partiellement un utilisateur (exemple: changer le mot de passe)
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(
+  req: NextRequest, 
+  context: { params: { id: string } }
+) {
   try {
     // Vérifier l'authentification
     const session = await getServerSession(authOptions);
@@ -341,11 +396,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
     }
     
-    const { id: userId } = params;
+    // Utiliser params.id de manière sûre
+    const userId = Number(context.params.id);
     
     // Vérifier si l'utilisateur existe
-    const user = await prisma.user.findUnique({
-      where: { id: Number(userId) }
+    const user = await prisma.users.findUnique({
+      where: { id: userId }
     });
     
     if (!user) {
@@ -353,7 +409,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     }
     
     // L'utilisateur ne peut modifier que son propre mot de passe, sauf s'il est admin
-    if (Number(userId) !== Number(session.user.id) && session.user.role !== 'admin') {
+    if (userId !== Number(session.user.id) && session.user.role !== 'admin') {
       return NextResponse.json(
         { error: "Vous ne pouvez pas modifier le mot de passe d'un autre utilisateur" },
         { status: 403 }
@@ -428,7 +484,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
             requiredForRoles: []
           }
         },
-        userId
+        String(userId)
       );
       
       if (!passwordValidationResult.isValid) {
@@ -442,8 +498,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       const hashedPassword = await hash(body.newPassword, 10);
       
       // Mettre à jour le mot de passe
-      await prisma.user.update({
-        where: { id: Number(userId) },
+      await prisma.users.update({
+        where: { id: userId },
         data: { 
           password: hashedPassword,
           first_login: false,
@@ -452,10 +508,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       });
       
       // Ajouter le nouveau mot de passe à l'historique
-      await addToPasswordHistory(userId, hashedPassword, passwordPolicy.password_history_count || 3);
+      await addToPasswordHistory(String(userId), hashedPassword, passwordPolicy.password_history_count || 3);
       
       // Mettre à jour la date d'expiration du mot de passe
-      await setPasswordExpiryDate(userId);
+      await setPasswordExpiryDate(String(userId));
       
       // Journaliser le changement de mot de passe
       await SecurityIncidentService.logIncident(
@@ -479,4 +535,4 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       { status: 500 }
     );
   }
-} 
+}

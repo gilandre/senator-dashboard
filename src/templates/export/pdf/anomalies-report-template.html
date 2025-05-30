@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapport d'Anomalies d'Accès</title>
+  <style>
+    /* Inclusion des styles de base */
+    {{> common/base-styles}}
+    
+    /* Styles spécifiques au rapport d'anomalies */
+    .anomalies-stats {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    
+    .stat-card {
+      flex: 1 1 30%;
+      background-color: #f8f9fa;
+      border-radius: 5px;
+      margin: 10px;
+      padding: 15px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .stat-card h3 {
+      margin-top: 0;
+      color: #dc2626;
+      font-size: 1.1em;
+    }
+    
+    .stat-value {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #111;
+      margin: 10px 0;
+    }
+    
+    .anomaly-type {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 3px;
+      font-size: 0.85em;
+      font-weight: bold;
+    }
+    
+    .access-denied {
+      background-color: #fee2e2;
+      color: #b91c1c;
+    }
+    
+    .invalid-badge {
+      background-color: #fef3c7;
+      color: #92400e;
+    }
+    
+    .unusual-time {
+      background-color: #e0e7ff;
+      color: #4338ca;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="{{logoUrl}}" alt="Logo {{appName}}" class="logo" />
+    <h1>Rapport d'Anomalies d'Accès</h1>
+    <p class="date-range">Période du {{formattedStartDate}} au {{formattedEndDate}}</p>
+    <p>Type de rapport: {{reportType}}</p>
+  </div>
+  
+  <div class="summary">
+    <h2>Résumé</h2>
+    <div class="anomalies-stats">
+      <div class="stat-card">
+        <h3>Total Anomalies</h3>
+        <div class="stat-value">{{data.totalAnomalies}}</div>
+      </div>
+      <div class="stat-card">
+        <h3>Accès Refusés</h3>
+        <div class="stat-value">{{data.accessDenied}}</div>
+        <small>({{formatPercentage (divide data.accessDenied data.totalAnomalies)}})</small>
+      </div>
+      <div class="stat-card">
+        <h3>Badges Invalides</h3>
+        <div class="stat-value">{{data.invalidBadges}}</div>
+        <small>({{formatPercentage (divide data.invalidBadges data.totalAnomalies)}})</small>
+      </div>
+    </div>
+    
+    <p>
+      <strong>Taux d'anomalies:</strong> {{formatPercentage data.anomalyRate}} des tentatives d'accès
+    </p>
+  </div>
+  
+  {{#if showCharts}}
+    <div class="charts-section">
+      <h2>Graphiques</h2>
+      {{#each charts}}
+        <div class="chart-container">
+          <h3>{{this.title}}</h3>
+          <img src="{{this.imageData}}" alt="{{this.title}}" />
+        </div>
+      {{/each}}
+    </div>
+  {{/if}}
+  
+  {{#if showDetailedData}}
+    <div class="detailed-data">
+      <h2>Anomalies Détectées</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Heure</th>
+            <th>Badge</th>
+            <th>Nom</th>
+            <th>Lecteur</th>
+            <th>Type d'Anomalie</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each data.anomalies}}
+            <tr>
+              <td>{{formatDate eventDate}}</td>
+              <td>{{eventTime}}</td>
+              <td>{{badgeNumber}}</td>
+              <td>{{userName}}</td>
+              <td>{{reader}}</td>
+              <td>
+                <span class="anomaly-type {{anomalyTypeClass eventType}}">
+                  {{formatAnomalyType eventType}}
+                </span>
+              </td>
+            </tr>
+          {{/each}}
+        </tbody>
+      </table>
+      
+      {{#if data.anomalies.length}}
+        {{#if hasMoreResults}}
+          <p class="note">Affichage limité à {{data.anomalies.length}} anomalies sur un total de {{data.totalAnomalies}}</p>
+        {{/if}}
+      {{else}}
+        <p>Aucune anomalie détectée pour la période sélectionnée.</p>
+      {{/if}}
+    </div>
+  {{/if}}
+  
+  <div class="footer">
+    <p>Généré le {{generationDate}}</p>
+    <p>{{appName}} © {{currentYear}}</p>
+    <p class="page-number">Page </p>
+  </div>
+</body>
+</html> 

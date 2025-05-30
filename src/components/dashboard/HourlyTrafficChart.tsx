@@ -28,11 +28,11 @@ const HourlyTrafficChart: React.FC<HourlyTrafficProps> = ({ startDate, endDate }
       
       try {
         // Construire l'URL avec les paramètres de date
-        let url = '/api/access-data';
+        let url = '/api/csv-analysis';
         const params = new URLSearchParams();
         
-        // Toujours ajouter au moins un paramètre pour éviter l'erreur "Paramètre requis manquant"
-        params.append('type', 'hourly');
+        // Toujours ajouter le paramètre requestType pour cette API
+        params.append('requestType', 'statistics');
         
         if (startDate) {
           params.append('startDate', startDate);
@@ -45,7 +45,7 @@ const HourlyTrafficChart: React.FC<HourlyTrafficProps> = ({ startDate, endDate }
         // Assurez-vous qu'il y a toujours un point d'interrogation
         url += `?${params.toString()}`;
         
-        console.log('Fetching data from:', url);
+        console.log('Fetching hourly data from:', url);
         
         const response = await fetch(url, {
           headers: {
@@ -59,18 +59,13 @@ const HourlyTrafficChart: React.FC<HourlyTrafficProps> = ({ startDate, endDate }
         
         const data = await response.json();
         
-        console.log('API response data:', data);
+        console.log('API response data (hourly):', data);
         
-        // Vérifier et formater les données horaires
-        if (Array.isArray(data.hourlyTraffic)) {
-          const formattedHourlyData = data.hourlyTraffic.map((item: any) => ({
-            hour: Number(item.hour),
-            count: Number(item.count)
-          }));
-          console.log('Formatted hourly data:', formattedHourlyData);
-          setHourlyData(formattedHourlyData);
+        // Utiliser les statistiques horaires de l'API csv-analysis
+        if (Array.isArray(data.hourlyStats)) {
+          setHourlyData(data.hourlyStats);
         } else {
-          console.error('Format de données horaires invalide:', data.hourlyTraffic);
+          console.error('Format de données horaires invalide:', data.hourlyStats);
           setHourlyData([]);
         }
         

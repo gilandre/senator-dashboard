@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{reportTitle}}</title>
+  <style>
+    {{> common/base-styles}}
+    {{#if customStyles}}
+      {{{customStyles}}}
+    {{/if}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="{{logoUrl}}" alt="Logo Senator InvesTech" class="logo" />
+    <h1>{{reportTitle}}</h1>
+    <p class="date-range">Période du {{formattedStartDate}} au {{formattedEndDate}}</p>
+    <p>Type de rapport: {{reportType}}</p>
+  </div>
+  
+  <div class="summary">
+    <h2>Résumé</h2>
+    {{#if summary}}
+      {{{summary}}}
+    {{else}}
+      <p>Nombre total d'enregistrements: {{totalRecords}}</p>
+      {{#if totalEmployees}}
+        <p>Nombre d'employés distincts: {{totalEmployees}}</p>
+      {{/if}}
+      {{#if totalDays}}
+        <p>Nombre de jours: {{totalDays}}</p>
+      {{/if}}
+    {{/if}}
+  </div>
+  
+  {{#if charts}}
+    <div class="charts-section">
+      <h2>Graphiques</h2>
+      {{#each charts}}
+        <div class="chart-container">
+          <h3>{{this.title}}</h3>
+          <img src="{{this.imageData}}" alt="{{this.title}}" />
+        </div>
+      {{/each}}
+    </div>
+  {{/if}}
+  
+  {{#if detailedData}}
+    <div class="detailed-data">
+      <h2>Données détaillées</h2>
+      {{{detailedData}}}
+    </div>
+  {{/if}}
+  
+  <div class="footer">
+    <p>Généré le {{generationDate}}</p>
+    <p>Senator InvesTech © {{currentYear}}</p>
+    <p class="page-number">Page </p>
+  </div>
+</body>
+</html> 

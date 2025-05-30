@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { AuthLogger } from '@/lib/security/authLogger';
 
 // Types pour les données de présence
 interface PresenceData {
@@ -119,6 +120,7 @@ async function fetchPresenceData(startDate?: string, endDate?: string, filters: 
     // RÉCUPÉRATION DES DONNÉES RÉELLES
     const dailyData: PresenceData[] = [];
     let detailedLogs: EmployeePresenceDetail[] = [];
+    let employeeStats: { badge_number: string; name: string; groupe: string; avgDuration: number; totalDays: number; totalHours: number; }[] = [];
     
     try {
       // 1. Récupération des logs détaillés par employé (incluant tous les employés, même désactivés)
@@ -225,7 +227,7 @@ async function fetchPresenceData(startDate?: string, endDate?: string, filters: 
         emp.daysCount += 1;
       }
       
-      const employeeStats = Array.from(employeeMap.values()).map(emp => ({
+      employeeStats = Array.from(employeeMap.values()).map(emp => ({
         badge_number: emp.badge_number,
         name: emp.name,
         groupe: emp.groupe, // Renommé de "department" à "groupe"
@@ -248,21 +250,19 @@ async function fetchPresenceData(startDate?: string, endDate?: string, filters: 
     
     for (const day of dailyData) {
       const date = new Date(day.date);
-      const dayOfWeek = date.getDay();
-      const dayName = dayNames[dayOfWeek];
+      const dayOfWeek = dayNames[date.getDay()];
       
-      if (!weeklyMap.has(dayName)) {
-        weeklyMap.set(dayName, { totalDuration: 0, totalCount: 0, days: 0 });
+      if (!weeklyMap.has(dayOfWeek)) {
+        weeklyMap.set(dayOfWeek, { totalDuration: 0, totalCount: 0, days: 0 });
       }
       
-      const data = weeklyMap.get(dayName)!;
-      data.totalDuration += day.duration * day.count; // Total des minutes de tous les utilisateurs 
+      const data = weeklyMap.get(dayOfWeek)!;
+      data.totalDuration += day.duration * day.count; // Multiplication par le nombre d'utilisateurs
       data.totalCount += day.count;
       data.days += 1;
     }
     
-    const weekly = Array.from(weeklyMap.entries())
-      .filter(([day]) => day !== "Samedi" && day !== "Dimanche") // Exclure les weekends si nécessaire
+    const weeklyData = Array.from(weeklyMap.entries())
       .map(([day, data]) => ({
         day,
         avgDuration: data.totalCount > 0 ? Math.round(data.totalDuration / data.totalCount) : 0,
@@ -270,48 +270,41 @@ async function fetchPresenceData(startDate?: string, endDate?: string, filters: 
         totalHours: Math.round(data.totalDuration / 60 * 10) / 10 // En heures avec 1 décimale
       }))
       .sort((a, b) => {
-        // Trier par jour de la semaine
+        // Trie par jour de la semaine (commençant par Lundi)
         const dayIndex = (name: string) => dayNames.indexOf(name);
         return dayIndex(a.day) - dayIndex(b.day);
       });
     
     // 5. Données mensuelles - agrégées par semaine
-    const monthly = generateMonthlyDataFromDaily(dailyData);
+    const monthlyData = generateMonthlyDataFromDaily(dailyData);
     
     // 6. Données annuelles - agrégées par mois
-    const yearly = generateYearlyDataFromDaily(dailyData);
+    const yearlyData = generateYearlyDataFromDaily(dailyData);
     
-    // 7. Résumé global
-    let totalEmployees = new Set(detailedLogs.map(log => log.badge_number)).size;
-    let totalDays = new Set(detailedLogs.map(log => log.date)).size;
-    let totalPresenceDuration = detailedLogs.reduce((sum, log) => sum + log.duration, 0);
-    let totalDailyEmployeeCount = dailyData.reduce((sum, day) => sum + day.count, 0);
-    
+    // 7. Calcul du résumé global
     const summary = {
-      totalEmployees,
-      totalDays,
-      avgDailyHours: totalDays > 0 ? Math.round((totalPresenceDuration / totalDays / 60) * 10) / 10 : 0,
-      totalHours: Math.round(totalPresenceDuration / 60 * 10) / 10,
-      avgEmployeePerDay: totalDays > 0 ? Math.round((totalDailyEmployeeCount / totalDays) * 10) / 10 : 0
+      totalEmployees: new Set(detailedLogs.map(log => log.badge_number)).size,
+      totalDays: dailyData.length,
+      avgDailyHours: Math.round(dailyData.reduce((sum, day) => sum + day.duration, 0) / (dailyData.length || 1) / 60 * 10) / 10,
+      totalHours: Math.round(dailyData.reduce((sum, day) => sum + day.duration * day.count, 0) / 60 * 10) / 10,
+      avgEmployeePerDay: Math.round(dailyData.reduce((sum, day) => sum + day.count, 0) / (dailyData.length || 1) * 10) / 10
     };
     
     return {
       daily: dailyData,
-      weekly,
-      monthly,
-      yearly,
-      employeeStats: [],  // Tableau vide si la variable n'est pas définie plus tôt
+      weekly: weeklyData,
+      monthly: monthlyData,
+      yearly: yearlyData,
+      employeeStats,
       detailedLogs,
       summary
     };
-    
   } catch (error) {
-    console.error('Erreur lors de la récupération des données de présence:', error);
+    console.error("Erreur lors de la récupération des données de présence:", error);
     return getEmptyPresenceStats();
   }
 }
 
-// Fonction pour retourner des statistiques vides quand aucune donnée n'est disponible
 function getEmptyPresenceStats(): PresenceStats {
   return {
     daily: [],
@@ -330,22 +323,20 @@ function getEmptyPresenceStats(): PresenceStats {
   };
 }
 
-// Nouvelle fonction pour calculer l'heure de fin à partir d'une heure de début et d'une durée
 function formatEndTime(startTime: string, durationMinutes: number): string {
   try {
     const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + durationMinutes;
     
-    let totalMinutes = hours * 60 + minutes + durationMinutes;
     const endHours = Math.floor(totalMinutes / 60) % 24;
     const endMinutes = totalMinutes % 60;
     
     return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
   } catch (error) {
-    return "17:00"; // Valeur par défaut
+    return "00:00";
   }
 }
 
-// Fonction pour générer des données mensuelles à partir des données quotidiennes
 function generateMonthlyDataFromDaily(dailyData: PresenceData[]) {
   const weekMap = new Map<string, { totalDuration: number; totalCount: number; days: number }>();
   
@@ -429,57 +420,279 @@ function formatTime(date: Date): string {
   return `${hours}:${minutes}`;
 }
 
+/**
+ * GET /api/presence - Récupérer les données de présence
+ */
 export async function GET(req: NextRequest) {
   try {
-    // Bypass d'authentification pour les tests en développement
-    const bypassAuth = process.env.NODE_ENV === 'development' && 
-                      req.headers.get('x-test-bypass-auth') === 'admin';
-    
-    if (!bypassAuth) {
-      const session = await getServerSession(authOptions);
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Récupérer les paramètres de la requête
+    const { searchParams } = new URL(req.url);
+    const startDate = searchParams.get('startDate');
+    const endDate = searchParams.get('endDate');
+    const employeeId = searchParams.get('employeeId');
+    const type = searchParams.get('type');
+
+    // Valider les dates
+    if (!startDate || !endDate) {
+      return NextResponse.json(
+        { error: "Les dates de début et de fin sont requises" },
+        { status: 400 }
+      );
+    }
+
+    // Construire les filtres pour fetchPresenceData
+    const filters: any = {};
+    if (employeeId) {
+      // Récupérer le badge_number correspondant à l'employee_id
+      const employee = await prisma.employees.findFirst({
+        where: { employee_id: employeeId }
+      });
       
-      if (!session) {
-        return NextResponse.json(
-          { error: "Non autorisé" },
-          { status: 401 }
-        );
+      if (employee) {
+        filters.badge_number = employee.badge_number;
       }
     }
     
-    // Récupérer les paramètres de requête
-    const { searchParams } = new URL(req.url);
-    const period = searchParams.get("period") || "all";
-    const startDate = searchParams.get("startDate") || undefined;
-    const endDate = searchParams.get("endDate") || undefined;
-    
-    // Récupérer les filtres supplémentaires
-    const filters = {
-      personType: searchParams.get("personType") || 'all',
-      department: searchParams.get("department") || 'all',
-      eventType: searchParams.get("eventType") || undefined
-    };
-    
-    console.log('API request parameters:', { period, startDate, endDate, filters });
-    
-    // Récupérer les données depuis la base de données
-    const data = await fetchPresenceData(startDate, endDate, filters);
-    
-    // Retourner les données en fonction de la période demandée
-    if (period === "daily") {
-      return NextResponse.json(data.daily);
-    } else if (period === "weekly") {
-      return NextResponse.json(data.weekly);
-    } else if (period === "monthly") {
-      return NextResponse.json(data.monthly);
-    } else if (period === "yearly") {
-      return NextResponse.json(data.yearly);
-    } else {
-      return NextResponse.json(data);
+    if (type) {
+      filters.eventType = type;
     }
+
+    // Récupérer les données de présence
+    const presenceData = await fetchPresenceData(startDate, endDate, filters);
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'presence_view',
+      `Consultation des données de présence du ${startDate} au ${endDate}`
+    );
+
+    return NextResponse.json(presenceData);
   } catch (error) {
-    console.error("[API] Error fetching presence data:", error);
+    console.error('Erreur lors de la récupération des données de présence:', error);
     return NextResponse.json(
       { error: "Erreur lors de la récupération des données de présence" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/presence - Enregistrer une nouvelle présence
+ */
+export async function POST(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Extraire les données
+    const body = await req.json();
+    const { employeeId, type, date, time, notes } = body;
+
+    // Valider les données requises
+    if (!employeeId || !type || !date || !time) {
+      return NextResponse.json(
+        { error: "Tous les champs obligatoires doivent être remplis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si l'employé existe
+    const employee = await prisma.employees.findUnique({
+      where: { id: Number(employeeId) }
+    });
+
+    if (!employee) {
+      return NextResponse.json(
+        { error: "Employé non trouvé" },
+        { status: 404 }
+      );
+    }
+
+    // Créer un enregistrement access_logs
+    const eventDate = new Date(date);
+    const eventTime = new Date(`${date}T${time}`);
+    
+    const accessLog = await prisma.access_logs.create({
+      data: {
+        badge_number: employee.badge_number,
+        person_type: 'employee',
+        event_date: eventDate,
+        event_time: eventTime,
+        event_type: type === 'entry' ? 'entry' : 'exit',
+        full_name: `${employee.first_name} ${employee.last_name}`,
+        group_name: employee.department || 'Non spécifié',
+        reader: notes || 'Manuel',
+        terminal: 'API',
+        direction: type === 'entry' ? 'in' : 'out',
+        processed: true,
+        created_at: new Date()
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'presence_create',
+      `Enregistrement manuel de présence: ${employee.first_name} ${employee.last_name} (${type}) le ${date} à ${time}`
+    );
+
+    return NextResponse.json({
+      message: "Enregistrement de présence créé avec succès",
+      data: accessLog
+    }, { status: 201 });
+  } catch (error) {
+    console.error('Erreur lors de la création de l\'enregistrement de présence:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la création de l'enregistrement de présence" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PUT /api/presence/:id - Mettre à jour un enregistrement de présence
+ */
+export async function PUT(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Extraire l'ID de l'URL
+    const { pathname } = new URL(req.url);
+    const id = pathname.split('/').pop();
+
+    if (!id || isNaN(Number(id))) {
+      return NextResponse.json(
+        { error: "ID d'enregistrement invalide" },
+        { status: 400 }
+      );
+    }
+
+    // Extraire les données
+    const body = await req.json();
+    const { type, date, time, notes } = body;
+
+    // Valider les données requises
+    if (!type || !date || !time) {
+      return NextResponse.json(
+        { error: "Tous les champs obligatoires doivent être remplis" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si l'enregistrement existe
+    const existingLog = await prisma.access_logs.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingLog) {
+      return NextResponse.json(
+        { error: "Enregistrement non trouvé" },
+        { status: 404 }
+      );
+    }
+
+    // Mettre à jour l'enregistrement
+    const eventDate = new Date(date);
+    const eventTime = new Date(`${date}T${time}`);
+    
+    const updatedLog = await prisma.access_logs.update({
+      where: { id: Number(id) },
+      data: {
+        event_date: eventDate,
+        event_time: eventTime,
+        event_type: type === 'entry' ? 'entry' : 'exit',
+        reader: notes || existingLog.reader,
+        direction: type === 'entry' ? 'in' : 'out',
+      }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'presence_update',
+      `Mise à jour d'un enregistrement de présence ID: ${id}`
+    );
+
+    return NextResponse.json({
+      message: "Enregistrement de présence mis à jour avec succès",
+      data: updatedLog
+    });
+  } catch (error) {
+    console.error('Erreur lors de la mise à jour de l\'enregistrement de présence:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la mise à jour de l'enregistrement de présence" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/presence/:id - Supprimer un enregistrement de présence
+ */
+export async function DELETE(req: NextRequest) {
+  try {
+    // Vérification de l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Authentification requise" }, { status: 401 });
+    }
+
+    // Extraire l'ID de l'URL
+    const { pathname } = new URL(req.url);
+    const id = pathname.split('/').pop();
+
+    if (!id || isNaN(Number(id))) {
+      return NextResponse.json(
+        { error: "ID d'enregistrement invalide" },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier si l'enregistrement existe
+    const existingLog = await prisma.access_logs.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingLog) {
+      return NextResponse.json(
+        { error: "Enregistrement non trouvé" },
+        { status: 404 }
+      );
+    }
+
+    // Supprimer l'enregistrement
+    await prisma.access_logs.delete({
+      where: { id: Number(id) }
+    });
+
+    // Enregistrer l'activité
+    await AuthLogger.logActivity(
+      session.user.id,
+      'presence_delete',
+      `Suppression d'un enregistrement de présence ID: ${id}`
+    );
+
+    return NextResponse.json({
+      message: "Enregistrement de présence supprimé avec succès"
+    });
+  } catch (error) {
+    console.error('Erreur lors de la suppression de l\'enregistrement de présence:', error);
+    return NextResponse.json(
+      { error: "Erreur lors de la suppression de l'enregistrement de présence" },
       { status: 500 }
     );
   }

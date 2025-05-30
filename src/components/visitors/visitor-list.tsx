@@ -88,6 +88,7 @@ export function VisitorList() {
   const fetchVisitors = async () => {
     setLoading(true);
     try {
+      console.log("Récupération des visiteurs...");
       const response = await axios.get('/api/visitors', {
         params: {
           page: pagination.page,
@@ -96,13 +97,22 @@ export function VisitorList() {
         }
       });
 
+      console.log("Réponse de l'API:", response.data);
+      
+      // Vérifier la structure des données reçues
+      if (response.data.visitors && response.data.visitors.length > 0) {
+        console.log("Structure du premier visiteur:", JSON.stringify(response.data.visitors[0], null, 2));
+      } else {
+        console.log("Aucun visiteur reçu de l'API");
+      }
+
       setVisitors(response.data.visitors);
-      setCompanies(response.data.companies);
+      setCompanies(response.data.companies || []);
       setPagination({
-        total: response.data.total,
-        page: response.data.currentPage,
+        total: response.data.pagination?.total || response.data.total || 0,
+        page: response.data.pagination?.currentPage || response.data.currentPage || pagination.page,
         limit: pagination.limit,
-        totalPages: response.data.totalPages
+        totalPages: response.data.pagination?.pages || response.data.totalPages || 0
       });
       
       // Calculate KPIs
@@ -245,10 +255,13 @@ export function VisitorList() {
                   setLoading(true);
                   const response = await axios.post('/api/batch/import-visitors');
                   if (response.status === 200) {
-                    const stats = response.data.stats;
+                    // Utiliser les propriétés réellement disponibles dans la réponse
+                    const visitorsAdded = response.data.visitorsAdded || 0;
+                    const employeesPurged = response.data.employeesPurged || 0;
+                    
                     toast({
                       title: "Importation réussie",
-                      description: `${stats.created} visiteurs créés, ${stats.updated} mis à jour, ${stats.skipped} ignorés, ${stats.errors} erreurs. Durée: ${stats.duration}`,
+                      description: `${visitorsAdded} nouveaux visiteurs importés. ${employeesPurged > 0 ? `${employeesPurged} employés purgés de la table visiteurs.` : ''}`,
                     });
                     fetchVisitors();
                   }

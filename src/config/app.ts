@@ -19,6 +19,33 @@ export const APP_CONFIG = {
       text: '#FFFFFF',
       hover: '#106EBE' // Bleu Microsoft foncé
     }
+  },
+  // Configuration de l'export de documents
+  export: {
+    // Logo par défaut (base64) à utiliser dans les exports PDF si aucun logo n'est fourni
+    defaultLogo: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjUwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjx0ZXh0IHg9IjEwIiB5PSIzMCIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjI0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzAwNzhENCI+RW1lcmF1ZGUgRGFzaGk8L3RleHQ+PC9zdmc+',
+    // Configuration du format des fichiers exportés
+    formats: {
+      csv: {
+        delimiter: ',',
+        includeHeaders: true,
+        addBOM: true
+      },
+      excel: {
+        defaultSheetName: 'Données',
+        autoWidth: true,
+        defaultDateFormat: 'dd/mm/yyyy'
+      },
+      pdf: {
+        pageSize: 'A4',
+        defaultMargins: {
+          top: '20mm',
+          right: '20mm',
+          bottom: '20mm',
+          left: '20mm'
+        }
+      }
+    }
   }
 } as const;
 

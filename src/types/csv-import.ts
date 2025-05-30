@@ -42,6 +42,11 @@ export interface ProcessingStats {
   errorRecords: number;
   skippedRecords: number;
   duplicates: number;
+  employees: number;
+  visitors: number;
+  entriesCount: number;
+  exitsCount: number;
+  totalRecords: number;
   warnings: string[];
 }
 

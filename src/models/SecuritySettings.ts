@@ -1,9 +1,10 @@
-import mongoose from 'mongoose';
+import { prisma } from '@/lib/prisma';
 
 /**
  * Interface pour les paramètres de sécurité
  */
 export interface ISecuritySettings {
+  id?: number;
   passwordPolicy: {
     minLength: number;
     requireUppercase: boolean;
@@ -12,6 +13,7 @@ export interface ISecuritySettings {
     requireSpecialChars: boolean;
     preventReuse: number; // Nombre d'anciens mots de passe à vérifier
     expiryDays: number; // 0 = pas d'expiration
+    defaultPassword?: string; // Mot de passe par défaut pour les nouveaux utilisateurs
   };
   accountPolicy: {
     maxLoginAttempts: number;
@@ -38,66 +40,89 @@ export interface ISecuritySettings {
     enabled: boolean;
     requiredForRoles: string[]; // 'all' ou liste de rôles
   };
-  createdAt?: Date;
-  updatedAt?: Date;
-  updatedBy?: number | null;
+  created_at?: Date;
+  updated_at?: Date;
+  updated_by?: number | null;
 }
 
-const securitySettingsSchema = new mongoose.Schema({
-  passwordPolicy: {
-    minLength: { type: Number, default: 8 },
-    requireUppercase: { type: Boolean, default: true },
-    requireLowercase: { type: Boolean, default: true },
-    requireNumbers: { type: Boolean, default: true },
-    requireSpecialChars: { type: Boolean, default: true },
-    preventReuse: { type: Number, default: 3 },
-    expiryDays: { type: Number, default: 90 }
-  },
-  accountPolicy: {
-    maxLoginAttempts: { type: Number, default: 5 },
-    lockoutDuration: { type: Number, default: 30 }, // minutes
-    forcePasswordChangeOnFirstLogin: { type: Boolean, default: true }
-  },
-  sessionPolicy: {
-    sessionTimeout: { type: Number, default: 60 }, // minutes
-    inactivityTimeout: { type: Number, default: 15 }, // minutes
-    singleSessionOnly: { type: Boolean, default: false }
-  },
-  networkPolicy: {
-    ipRestrictionEnabled: { type: Boolean, default: false },
-    allowedIPs: [{ type: String }],
-    enforceHTTPS: { type: Boolean, default: true }
-  },
-  auditPolicy: {
-    logLogins: { type: Boolean, default: true },
-    logModifications: { type: Boolean, default: true },
-    logRetentionDays: { type: Number, default: 365 },
-    enableNotifications: { type: Boolean, default: true }
-  },
-  twoFactorAuth: {
-    enabled: { type: Boolean, default: false },
-    requiredForRoles: [{ type: String }]
-  },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-  updatedBy: { type: Number, default: null }
-});
+/**
+ * Obtenir les paramètres de sécurité
+ */
+export async function getSecuritySettings(): Promise<ISecuritySettings | null> {
+  // Récupérer les paramètres les plus récents
+  const settings = await prisma.security_settings.findFirst({
+    orderBy: {
+      updated_at: 'desc'
+    }
+  });
 
-// Mettre à jour la date de dernière modification
-securitySettingsSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
-  next();
-});
+  if (!settings) return null;
 
-// Créer ou récupérer le modèle de façon sécurisée
-let SecuritySettings: mongoose.Model<ISecuritySettings>;
-
-try {
-  // Vérifier si le modèle existe déjà pour éviter l'erreur OverwriteModelError
-  SecuritySettings = mongoose.model<ISecuritySettings>('SecuritySettings');
-} catch (e) {
-  // Si le modèle n'existe pas, le créer
-  SecuritySettings = mongoose.model<ISecuritySettings>('SecuritySettings', securitySettingsSchema);
+  // Convertir les données JSON stockées en objet structuré
+  return {
+    id: settings.id,
+    passwordPolicy: JSON.parse(settings.password_policy as string),
+    accountPolicy: JSON.parse(settings.account_policy as string),
+    sessionPolicy: JSON.parse(settings.session_policy as string),
+    networkPolicy: JSON.parse(settings.network_policy as string),
+    auditPolicy: JSON.parse(settings.audit_policy as string),
+    twoFactorAuth: JSON.parse(settings.two_factor_auth as string),
+    created_at: settings.created_at,
+    updated_at: settings.updated_at,
+    updated_by: settings.updated_by
+  };
 }
 
-export default SecuritySettings; 
+/**
+ * Créer ou mettre à jour les paramètres de sécurité
+ */
+export async function saveSecuritySettings(settings: ISecuritySettings, updatedBy: number): Promise<ISecuritySettings> {
+  // Préparer les données pour le stockage JSON
+  const securityData = {
+    password_policy: JSON.stringify(settings.passwordPolicy),
+    account_policy: JSON.stringify(settings.accountPolicy),
+    session_policy: JSON.stringify(settings.sessionPolicy),
+    network_policy: JSON.stringify(settings.networkPolicy),
+    audit_policy: JSON.stringify(settings.auditPolicy),
+    two_factor_auth: JSON.stringify(settings.twoFactorAuth),
+    updated_by: updatedBy,
+    updated_at: new Date()
+  };
+
+  let updatedSettings;
+
+  if (settings.id) {
+    // Mise à jour des paramètres existants
+    updatedSettings = await prisma.security_settings.update({
+      where: { id: settings.id },
+      data: securityData
+    });
+  } else {
+    // Création de nouveaux paramètres
+    updatedSettings = await prisma.security_settings.create({
+      data: {
+        ...securityData,
+        created_at: new Date()
+      }
+    });
+  }
+
+  // Convertir les paramètres stockés pour les retourner
+  return {
+    id: updatedSettings.id,
+    passwordPolicy: JSON.parse(updatedSettings.password_policy as string),
+    accountPolicy: JSON.parse(updatedSettings.account_policy as string),
+    sessionPolicy: JSON.parse(updatedSettings.session_policy as string),
+    networkPolicy: JSON.parse(updatedSettings.network_policy as string),
+    auditPolicy: JSON.parse(updatedSettings.audit_policy as string),
+    twoFactorAuth: JSON.parse(updatedSettings.two_factor_auth as string),
+    created_at: updatedSettings.created_at,
+    updated_at: updatedSettings.updated_at,
+    updated_by: updatedSettings.updated_by
+  };
+}
+
+export default {
+  getSecuritySettings,
+  saveSecuritySettings
+}; 

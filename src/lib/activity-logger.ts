@@ -79,4 +79,21 @@ export async function getRecentActivities(limit: number = 10) {
     console.error('Erreur lors de la récupération des activités récentes:', error);
     return [];
   }
-} 
+}
+
+// Create activity logger
+interface ActivityLog {
+  userId: string;
+  action: string;
+  metadata: Record<string, unknown>;
+  timestamp: Date;
+}
+
+const logActivity = async (log: Omit<ActivityLog, 'timestamp'>) => {
+  await prisma.activityLog.create({
+    data: {
+      ...log,
+      timestamp: new Date()
+    }
+  });
+};

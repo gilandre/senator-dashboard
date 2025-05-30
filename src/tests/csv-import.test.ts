@@ -67,14 +67,23 @@ describe('CSV Import Processing', () => {
       expect(validated).toEqual(record);
     });
 
+    it('should reject time without seconds', () => {
+      const record = {
+        badgeNumber: '12345',
+        eventDate: '01/01/2024',
+        eventTime: '10:00'
+      };
+      expect(() => validateCSVRecord(record)).toThrow('Invalid time format');
+    });
+
     it('should reject an invalid record', () => {
       const record = {
         badgeNumber: '',
         eventDate: 'invalid-date',
-        eventTime: 'invalid-time'
+        eventTime: '10:00' // Changed from generic invalid-time
       };
 
       expect(() => validateCSVRecord(record)).toThrow();
     });
   });
-}); 
+});

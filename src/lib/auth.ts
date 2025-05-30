@@ -7,6 +7,8 @@ import { AuthLogger } from "@/lib/security/authLogger";
 import { prisma } from "./prisma";
 import { isPasswordExpired } from "./security/passwordValidator";
 import config, { JWT_SESSION_DURATION } from "./config";
+import { NextRequest } from "next/server";
+import { getServerSession } from "next-auth/next";
 
 // Extend the User type from next-auth
 declare module "next-auth" {
@@ -17,6 +19,7 @@ declare module "next-auth" {
     role: string;
     firstLogin?: boolean;
     passwordExpired?: boolean;
+    permissions?: string[];
   }
 }
 
@@ -29,6 +32,14 @@ export interface CustomSession extends Session {
     role: string;
     firstLogin?: boolean;
     passwordExpired?: boolean;
+    permissions?: string[];
+  }
+}
+
+// Extend NextRequest to include ip
+declare module "next/server" {
+  interface NextRequest {
+    ip?: string;
   }
 }
 
@@ -55,12 +66,13 @@ export const authOptions: NextAuthOptions = {
             ipAddress as string
           );
           
-          // Rechercher l'utilisateur par email avec Prisma
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email }
-          });
+          // Rechercher l'utilisateur par email avec une requête SQL directe
+          const users: any[] = await prisma.$queryRaw`
+            SELECT * FROM users WHERE email = ${credentials.email} LIMIT 1
+          `;
           
-          if (!user) {
+          // Vérifier si l'utilisateur existe
+          if (!users || users.length === 0) {
             await AuthLogger.logAuthEvent(
               'login_failure',
               credentials.email,
@@ -71,6 +83,8 @@ export const authOptions: NextAuthOptions = {
             
             throw new Error("Identifiants incorrects");
           }
+          
+          const user = users[0];
           
           const isPasswordCorrect = await compare(credentials.password, user.password);
           
@@ -119,7 +133,8 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             role: user.role,
             firstLogin: user.first_login || false,
-            passwordExpired: passwordExpired
+            passwordExpired: passwordExpired,
+            permissions: user.permissions
           };
         } catch (error: any) {
           console.error("Erreur d'authentification:", error.message);
@@ -146,6 +161,7 @@ export const authOptions: NextAuthOptions = {
         token.role = user.role;
         token.firstLogin = user.firstLogin;
         token.passwordExpired = user.passwordExpired;
+        token.permissions = user.permissions;
       }
       return token;
     },
@@ -157,6 +173,7 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role as string;
         session.user.firstLogin = token.firstLogin as boolean;
         session.user.passwordExpired = token.passwordExpired as boolean;
+        session.user.permissions = token.permissions as string[];
       }
       return session as CustomSession;
     },
@@ -207,4 +224,47 @@ export const getCurrentUserId = (session: CustomSession | null) => {
 // Helper function to get current user name
 export const getCurrentUserName = (session: CustomSession | null) => {
   return session?.user?.name || null;
-}; 
+};
+
+// Add authorization middleware
+const authorize = (requiredPermissions: string[]) => {
+  return async (req: NextRequest) => {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.permissions?.some(p => requiredPermissions.includes(p))) {
+      throw new Error('Unauthorized');
+    }
+    return req;
+  };
+};
+
+// Add rate limiting
+const rateLimit = (windowMs: number, max: number) => {
+  const store = new Map<string, {count: number, resetTime: number}>();
+  return async (req: NextRequest) => {
+    const ip = req.ip || req.headers.get('x-forwarded-for');
+    const current = store.get(ip) || {count: 0, resetTime: Date.now() + windowMs};
+    
+    if (Date.now() > current.resetTime) {
+      store.delete(ip);
+      return req;
+    }
+    
+    if (current.count >= max) {
+      throw new Error('Too many requests');
+    }
+    
+    store.set(ip, {...current, count: current.count + 1});
+    return req;
+  };
+};
+
+// Add deactivation reason handling
+export const handleFailedLogin = async (userId: string) => {
+  // Au lieu de compter les tentatives échouées, on suspend directement l'utilisateur
+  await prisma.users.update({
+    where: { id: Number(userId) },
+    data: {
+      status: 'suspended',
+    }
+  });
+};

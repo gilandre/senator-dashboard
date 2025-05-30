@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rapport de Temps de Présence</title>
+  <style>
+    /* Styles de base */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+      line-height: 1.5;
+    }
+    
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    
+    .logo {
+      max-width: 200px;
+      max-height: 60px;
+    }
+    
+    h1 {
+      color: #0078D4;
+      margin-bottom: 10px;
+    }
+    
+    h2 {
+      color: #0078D4;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 5px;
+    }
+    
+    .date-range {
+      font-style: italic;
+      margin-bottom: 5px;
+    }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+    }
+    
+    th {
+      background-color: #f8f9fa;
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: left;
+    }
+    
+    td {
+      border: 1px solid #ddd;
+      padding: 10px;
+    }
+    
+    tr:nth-child(even) {
+      background-color: #f8f9fa;
+    }
+    
+    .footer {
+      margin-top: 40px;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+      border-top: 1px solid #ddd;
+      padding-top: 10px;
+    }
+    
+    .page-number {
+      text-align: center;
+      font-size: 10px;
+      color: #999;
+    }
+    
+    /* Styles spécifiques au rapport de présence */
+    .presence-stats {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    
+    .stat-card {
+      flex: 1 1 45%;
+      background-color: #f8f9fa;
+      border-radius: 5px;
+      margin: 10px;
+      padding: 15px;
+      text-align: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .stat-card h3 {
+      margin-top: 0;
+      color: #0078D4;
+      font-size: 1.1em;
+    }
+    
+    .stat-value {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #111;
+      margin: 10px 0;
+    }
+    
+    .daily-data th, .daily-data td {
+      text-align: center;
+    }
+    
+    .daily-data th:first-child, .daily-data td:first-child {
+      text-align: left;
+    }
+    
+    .weekend {
+      background-color: #ffe6e6 !important;
+    }
+    
+    .low-attendance {
+      color: #dc2626;
+    }
+    
+    .high-attendance {
+      color: #16a34a;
+    }
+    
+    /* Styles pour le graphique */
+    .chart-container {
+      width: 100%;
+      margin: 20px 0;
+      padding: 10px;
+      background-color: #fff;
+      border-radius: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .chart-image {
+      width: 100%;
+      max-height: 300px;
+      object-fit: contain;
+    }
+    
+    .simple-chart {
+      display: flex;
+      align-items: flex-end;
+      height: 200px;
+      width: 100%;
+      padding: 10px 0;
+      border-bottom: 1px solid #ddd;
+    }
+    
+    .chart-bar {
+      flex: 1;
+      background-color: #0078D4;
+      margin: 0 1px;
+      min-height: 1px;
+      position: relative;
+    }
+    
+    .bar-label {
+      position: absolute;
+      bottom: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 8px;
+      writing-mode: vertical-lr;
+      white-space: nowrap;
+    }
+    
+    .note {
+      font-style: italic;
+      font-size: 0.9em;
+      color: #666;
+      margin-top: 10px;
+    }
+    
+    .debug-info {
+      background-color: #f8d7da;
+      border: 1px solid #f5c6cb;
+      color: #721c24;
+      padding: 10px;
+      margin: 20px 0;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="{{logoUrl}}" alt="Logo {{appName}}" class="logo" />
+    <h1>Rapport de Temps de Présence</h1>
+    <p class="date-range">Période du {{formattedStartDate}} au {{formattedEndDate}}</p>
+    <p>Type de rapport: {{reportType}}</p>
+  </div>
+  
+  <div class="summary">
+    <h2>Résumé</h2>
+    <div class="presence-stats">
+      <div class="stat-card">
+        <h3>Total Employés</h3>
+        <div class="stat-value">{{data.summary.totalEmployees}}</div>
+      </div>
+      <div class="stat-card">
+        <h3>Heures Totales</h3>
+        <div class="stat-value">{{formatHours data.summary.totalHours}}</div>
+      </div>
+      <div class="stat-card">
+        <h3>Moyenne par Employé</h3>
+        <div class="stat-value">{{calculateAverageHoursPerEmployee}}</div>
+      </div>
+      <div class="stat-card">
+        <h3>Taux de Présence</h3>
+        <div class="stat-value">{{formatPercentage data.summary.attendanceRate}}</div>
+      </div>
+    </div>
+  </div>
+  
+  {{#if showCharts}}
+    <div class="charts-section">
+      <h2>Évolution du temps de présence</h2>
+      <div class="chart-container">
+        {{#if chartImage}}
+          <img src="{{chartImage}}" alt="Graphique de présence" class="chart-image" />
+        {{else}}
+          <p class="note">Les graphiques ne sont pas disponibles dans cette version du rapport.</p>
+        {{/if}}
+      </div>
+    </div>
+  {{/if}}
+  
+  {{#if reportType}}
+    {{#ifEquals reportType "Données détaillées"}}
+      {{#if data.daily}}
+      <div class="detailed-data">
+        <h2>Données Détaillées</h2>
+        <table class="daily-data">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Jour</th>
+              <th>Employés Présents</th>
+              <th>Heures Totales</th>
+              <th>Moyenne par Employé</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{#each data.daily}}
+              <tr class="{{#if (isWeekend date)}}weekend{{/if}}">
+                <td>{{formatDate date}}</td>
+                <td>{{formatDayName date}}</td>
+                <td>{{count}}</td>
+                <td>{{formatHours duration}}</td>
+                <td>{{formatHours (divide duration (multiply count 60))}}</td>
+              </tr>
+            {{/each}}
+          </tbody>
+        </table>
+        
+        {{#if data.isLimitedData}}
+          <p class="note">* Ce rapport affiche un aperçu limité des données. Pour voir toutes les données, utilisez l'export détaillé.</p>
+        {{/if}}
+      </div>
+      {{else}}
+      <div class="no-detailed-data">
+        <p>Ce rapport est un résumé et ne contient pas de données détaillées. Pour voir les données détaillées, veuillez sélectionner le type "Données détaillées" lors de l'export.</p>
+      </div>
+      {{/if}}
+    {{else}}
+      <div class="summary-note">
+        <p><strong>Note:</strong> Ce rapport est un résumé et ne contient pas de données détaillées. Pour voir les données détaillées, veuillez sélectionner le type "Données détaillées" lors de l'export.</p>
+      </div>
+    {{/ifEquals}}
+  {{/if}}
+  
+  <div class="footer">
+    <p>Généré le {{generationDate}}</p>
+    <p>{{appName}} © {{currentYear}}</p>
+    <p class="page-number">Page </p>
+  </div>
+</body>
+</html> 

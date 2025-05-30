@@ -166,6 +166,11 @@ export default function SideMenu() {
               name: "Gestion du temps et présences",
               href: "/settings/work-calendar",
               icon: CalendarCheck,
+            },
+            {
+              name: "Politiques de mot de passe",
+              href: "/settings/security/password-policies",
+              icon: Key,
             }
           ]
         },

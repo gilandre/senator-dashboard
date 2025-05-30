@@ -1,30 +1,58 @@
-// DÉPRÉCIÉ: Ce fichier est maintenu uniquement pour des raisons de compatibilité
-// Utilisez prisma.ts à la place pour toutes les opérations de base de données
+/**
+ * DEPRECATED: Ce fichier est maintenu pour des raisons de compatibilité
+ * Toutes les fonctions redirigent maintenant vers Prisma
+ */
 
 import { prisma } from './prisma';
 
+// Avertissement de dépréciation
 console.warn(
-  '⚠️ AVERTISSEMENT: La connexion MongoDB est dépréciée. ' +
-  'Utilisez Prisma à la place pour toutes les opérations de base de données.'
+  '⚠️ AVERTISSEMENT: Le module MongoDB est déprécié. ' +
+  'Utilisez Prisma directement pour toutes les opérations de base de données.'
 );
 
+// Stub pour l'interface MongoDB
+export const mongoose = {
+  connect: () => Promise.resolve(),
+  connection: {
+    db: null,
+    readyState: 1,
+    on: () => {},
+    once: () => {},
+    close: () => Promise.resolve()
+  },
+  model: () => ({ 
+    find: () => ({ exec: () => Promise.resolve([]) }),
+    findOne: () => Promise.resolve(null),
+    create: () => Promise.resolve({}),
+    updateOne: () => Promise.resolve({ modifiedCount: 0 }),
+    deleteOne: () => Promise.resolve({ deletedCount: 0 }),
+    deleteMany: () => Promise.resolve({ deletedCount: 0 }),
+    countDocuments: () => Promise.resolve(0)
+  }),
+  Schema: function() { return {}; }
+};
+
 /**
- * DÉPRÉCIÉ: Fonction de compatibilité qui ne connecte plus à MongoDB
- * @deprecated Utilisez prisma à la place
+ * DEPRECATED: Fonction de compatibilité qui retourne Prisma
+ * @returns Une promise résolue avec un objet factice de connexion
  */
 export async function connectToDatabase() {
   console.warn(
     '⚠️ AVERTISSEMENT: connectToDatabase() est déprécié. ' +
-    'Utilisez prisma à la place pour toutes les opérations de base de données.'
+    'Utilisez prisma directement pour toutes les opérations de base de données.'
   );
   
-  // Retourne simplement une promesse résolue
-  return Promise.resolve({ readyState: 1 });
+  return Promise.resolve({ 
+    db: null,
+    client: null,
+    readyState: 1,
+    prisma
+  });
 }
 
 /**
- * DÉPRÉCIÉ: Fonction de compatibilité qui ne déconnecte plus de MongoDB
- * @deprecated Utilisez $disconnect sur l'instance Prisma si nécessaire
+ * DEPRECATED: Fonction de compatibilité qui ne fait plus rien
  */
 export async function disconnectFromDatabase() {
   console.warn(
@@ -33,4 +61,7 @@ export async function disconnectFromDatabase() {
   );
   
   return Promise.resolve(true);
-} 
+}
+
+// Export de l'instance prisma comme valeur par défaut
+export default prisma; 

@@ -2,7 +2,6 @@
 
 import TopMenu from '@/components/ui/top-menu';
 import SideMenu from '@/components/ui/side-menu';
-import { Toaster } from '@/components/ui/toaster';
 
 export default function ClientLayout({
   children,
@@ -18,7 +17,6 @@ export default function ClientLayout({
           {children}
         </main>
       </div>
-      <Toaster />
     </div>
   );
 } 

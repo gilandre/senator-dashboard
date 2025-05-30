@@ -1,4 +1,5 @@
 import { Metadata } from "next";
+import ClientLayout from '@/components/layout/ClientLayout';
 
 export const metadata: Metadata = {
   title: "Dashboard | EMERAUDE DASHI",
@@ -10,5 +11,5 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return <ClientLayout>{children}</ClientLayout>;
 } 

@@ -12,6 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import axios from 'axios';
+import { validateDateFormat } from '@/lib/utils/dateUtils';
 
 type ColumnMapping = {
   csvHeader: string;
@@ -148,6 +149,60 @@ export default function CsvImportPage() {
         for (let i = 1; i <= Math.min(10, lines.length - 1); i++) {
           if (lines[i] && lines[i].trim() !== '') {
             const values = lines[i].split(';');
+            
+            // Vérifier les champs obligatoires
+            const badgeIndex = headers.findIndex(h => h.toLowerCase().includes('badge'));
+            const dateIndex = headers.findIndex(h => h.toLowerCase().includes('date'));
+            const dateValue = values[dateIndex];
+            const readerIndex = headers.findIndex(h => h.toLowerCase().includes('lecteur'));
+
+            if (badgeIndex === -1 || !values[badgeIndex]?.trim()) {
+              setValidationErrors(['Colonne "Numéro de badge" manquante ou vide']);
+              return;
+            }
+
+            // Replace manual date validation with utility function
+            if (!validateDateFormat(dateValue)) {
+              validationErrors.push(`Date format invalide dans la ligne ${i+1}: ${dateValue}`);
+              setValidationErrors(['Format de date invalide (DD/MM/YYYY requis)']);
+              return;
+            }
+
+            const timeIndex = headers.findIndex(h => h.toLowerCase().includes('heure'));
+            if (timeIndex === -1) {
+              setValidationErrors(['Colonne "Heure évènements" manquante']);
+              return;
+            }
+
+            // Normaliser le format d'heure: accepter HH:MM et le convertir en HH:MM:SS si nécessaire
+            let timeValue = values[timeIndex]?.trim();
+            if (!timeValue) {
+              setValidationErrors(['Heure d\'événement manquante']);
+              return;
+            }
+
+            // Vérifier d'abord si c'est au format HH:MM
+            if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(timeValue)) {
+              // Ajouter automatiquement les secondes (:00)
+              values[timeIndex] = `${timeValue}:00`;
+              console.log(`Format d'heure normalisé: ${timeValue} → ${values[timeIndex]}`);
+            } 
+            // Vérifier si c'est déjà au format HH:MM:SS
+            else if (!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(timeValue)) {
+              setValidationErrors(['Format horaire invalide (HH:MM requis)']);
+              return;
+            }
+
+            if (readerIndex === -1 || !values[readerIndex]?.trim()) {
+              setValidationErrors(['Colonne "Lecteur" manquante ou vide']);
+              return;
+            }
+
+            // Vérification des valeurs vides dans les colonnes obligatoires
+            if (!values[badgeIndex]?.trim() || !values[dateIndex]?.trim() || !values[timeIndex]?.trim()) {
+              setValidationErrors(['Des valeurs obligatoires sont manquantes dans certaines lignes']);
+              return;
+            }
             const row: Record<string, string> = {};
             headers.forEach((header, index) => {
               row[header] = values[index] || '';
@@ -174,17 +229,29 @@ export default function CsvImportPage() {
       setIsUploading(true);
       setProgress(25);
 
-      // Créer un FormData pour l'upload
-      const formData = new FormData();
-      formData.append('file', file);
+      // Lire le fichier et le convertir en base64
+      const fileContent = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result) {
+            resolve(e.target.result as string);
+          } else {
+            reject(new Error('Échec de la lecture du fichier'));
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsText(file); // Lire comme texte pour les fichiers CSV
+      });
 
-      // Envoyer le fichier directement à l'API de traitement
-      const response = await axios.post('/api/import/csv/process', formData, {
+      // Envoyer le fichier au format JSON
+      const response = await axios.post('/api/import/csv/process', {
+        filePath: file.name,
+        fileContent: fileContent
+      }, {
         headers: {
-          'Content-Type': 'multipart/form-data',
+          'Content-Type': 'application/json',
           'Accept': 'application/json',
-        },
-        transformRequest: [(data) => data], // Empêche Axios de transformer le FormData
+        }
       });
 
       setIsUploading(false);
@@ -593,4 +660,4 @@ export default function CsvImportPage() {
       </Card>
     </div>
   );
-} 
+}

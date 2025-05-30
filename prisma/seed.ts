@@ -4,202 +4,234 @@ import { hash } from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  // Nettoyer la base de données
-  await prisma.$transaction([
-    prisma.userProfile.deleteMany(),
-    prisma.profilePermission.deleteMany(),
-    prisma.securityIncident.deleteMany(),
-    prisma.anomalies.deleteMany(),
-    prisma.holidays.deleteMany(),
-    prisma.report_history.deleteMany(),
-    prisma.report_schedule.deleteMany(),
-    prisma.report_templates.deleteMany(),
-    prisma.user_activities.deleteMany(),
-    prisma.password_history.deleteMany(),
-    prisma.attendance_config.deleteMany(),
-    prisma.security_settings.deleteMany(),
-    prisma.profile.deleteMany(),
-    prisma.permission.deleteMany(),
-    prisma.user.deleteMany(),
-  ]);
+  console.log('Seeding database...');
 
-  // Créer les permissions de base
-  const permissions = await Promise.all([
-    prisma.permission.create({
-      data: {
-        name: 'dashboard.view',
-        description: 'Voir le tableau de bord',
-        module: 'dashboard',
-        action: 'view',
-      },
-    }),
-    prisma.permission.create({
-      data: {
-        name: 'employees.manage',
-        description: 'Gérer les employés',
-        module: 'employees',
-        action: 'manage',
-      },
-    }),
-    prisma.permission.create({
-      data: {
-        name: 'visitors.manage',
-        description: 'Gérer les visiteurs',
-        module: 'visitors',
-        action: 'manage',
-      },
-    }),
-    prisma.permission.create({
-      data: {
-        name: 'reports.generate',
-        description: 'Générer des rapports',
-        module: 'reports',
-        action: 'generate',
-      },
-    }),
-    prisma.permission.create({
-      data: {
-        name: 'settings.manage',
-        description: 'Gérer les paramètres',
-        module: 'settings',
-        action: 'manage',
-      },
-    }),
-  ]);
-
-  // Créer les profils de base
-  const adminProfile = await prisma.profile.create({
-    data: {
-      name: 'Administrateur',
-      description: 'Profil administrateur avec tous les droits',
-      profile_permissions: {
-        create: permissions.map(permission => ({
-          permission_id: permission.id,
-        })),
-      },
+  // Données de référence - Statuts utilisateurs
+  const userStatuses = [
+    {
+      code: 'active',
+      value: 'active',
+      display_name: 'Actif',
+      description: 'Utilisateur actif pouvant se connecter',
+      type: 'status',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 1,
+      color_code: 'bg-green-100 text-green-800',
+      icon_name: 'CheckCircle',
     },
-  });
-
-  const userProfile = await prisma.profile.create({
-    data: {
-      name: 'Utilisateur',
-      description: 'Profil utilisateur standard',
-      profile_permissions: {
-        create: [
-          { permission_id: permissions[0].id }, // dashboard.view
-          { permission_id: permissions[3].id }, // reports.generate
-        ],
-      },
+    {
+      code: 'inactive',
+      value: 'inactive',
+      display_name: 'Inactif',
+      description: 'Utilisateur désactivé ne pouvant pas se connecter',
+      type: 'status',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 2,
+      color_code: 'bg-gray-100 text-gray-800',
+      icon_name: 'XCircle',
     },
-  });
+    {
+      code: 'suspended',
+      value: 'suspended',
+      display_name: 'Suspendu',
+      description: 'Utilisateur temporairement suspendu',
+      type: 'status',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 3,
+      color_code: 'bg-amber-100 text-amber-800',
+      icon_name: 'UserCheck',
+    },
+  ];
 
-  // Créer l'utilisateur administrateur
-  const adminPassword = await hash('Admin@123', 12);
-  const adminUser = await prisma.user.create({
-    data: {
-      name: 'Administrateur',
-      email: 'admin@senator.com',
-      password: adminPassword,
-      role: 'admin',
-      first_login: false,
-      status: 'active',
-      user_profiles: {
-        create: {
-          profile_id: adminProfile.id,
+  // Données de référence - Rôles utilisateurs
+  const userRoles = [
+    {
+      code: 'admin',
+      value: 'admin',
+      display_name: 'Administrateur',
+      description: 'Accès complet à toutes les fonctionnalités',
+      type: 'role',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 1,
+      color_code: 'bg-blue-100 text-blue-800',
+    },
+    {
+      code: 'operator',
+      value: 'operator',
+      display_name: 'Opérateur',
+      description: 'Accès à la plupart des fonctionnalités opérationnelles',
+      type: 'role',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 2,
+      color_code: 'bg-green-100 text-green-800',
+    },
+    {
+      code: 'viewer',
+      value: 'viewer',
+      display_name: 'Observateur',
+      description: 'Accès en lecture seule',
+      type: 'role',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 3,
+      color_code: 'bg-purple-100 text-purple-800',
+    },
+    {
+      code: 'user',
+      value: 'user',
+      display_name: 'Utilisateur',
+      description: 'Accès standard aux fonctionnalités de base',
+      type: 'role',
+      module: 'users',
+      feature: 'user_management',
+      is_active: true,
+      sort_order: 4,
+      color_code: 'bg-slate-100',
+    },
+  ];
+
+  // Données de référence - Statuts employés
+  const employeeStatuses = [
+    {
+      code: 'active',
+      value: 'active',
+      display_name: 'Actif',
+      description: 'Employé actif',
+      type: 'status',
+      module: 'employees',
+      feature: 'employee_management',
+      is_active: true,
+      sort_order: 1,
+      color_code: 'bg-green-100 text-green-800',
+    },
+    {
+      code: 'inactive',
+      value: 'inactive',
+      display_name: 'Inactif',
+      description: 'Employé inactif',
+      type: 'status',
+      module: 'employees',
+      feature: 'employee_management',
+      is_active: true,
+      sort_order: 2,
+      color_code: 'bg-gray-100 text-gray-800',
+    },
+    {
+      code: 'suspended',
+      value: 'suspended',
+      display_name: 'Suspendu',
+      description: 'Employé temporairement suspendu',
+      type: 'status',
+      module: 'employees',
+      feature: 'employee_management',
+      is_active: true,
+      sort_order: 3,
+      color_code: 'bg-amber-100 text-amber-800',
+    },
+  ];
+
+  // Insertion des données de référence
+  console.log('Seeding reference data...');
+  
+  // Insérer les statuts utilisateurs
+  for (const status of userStatuses) {
+    await prisma.reference_data.upsert({
+      where: {
+        type_code_module: {
+          type: status.type,
+          code: status.code,
+          module: status.module,
         },
       },
-    },
-  });
+      update: status,
+      create: status,
+    });
+  }
 
-  // Créer un utilisateur standard
-  const userPassword = await hash('User@123', 12);
-  const standardUser = await prisma.user.create({
-    data: {
-      name: 'Utilisateur Standard',
-      email: 'user@senator.com',
-      password: userPassword,
-      role: 'user',
-      first_login: false,
-      status: 'active',
-      user_profiles: {
-        create: {
-          profile_id: userProfile.id,
+  // Insérer les rôles utilisateurs
+  for (const role of userRoles) {
+    await prisma.reference_data.upsert({
+      where: {
+        type_code_module: {
+          type: role.type,
+          code: role.code,
+          module: role.module,
         },
       },
-    },
+      update: role,
+      create: role,
+    });
+  }
+
+  // Insérer les statuts employés
+  for (const status of employeeStatuses) {
+    await prisma.reference_data.upsert({
+      where: {
+        type_code_module: {
+          type: status.type,
+          code: status.code,
+          module: status.module,
+        },
+      },
+      update: status,
+      create: status,
+    });
+  }
+
+  // Créer un utilisateur admin par défaut si nécessaire
+  const adminEmail = 'admin@example.com';
+  const adminUser = await prisma.users.findUnique({
+    where: { email: adminEmail },
   });
 
-  // Créer les paramètres de sécurité de base
-  await prisma.security_settings.create({
-    data: {
-      min_password_length: 8,
-      require_special_chars: true,
-      require_numbers: true,
-      require_uppercase: true,
-      password_history_count: 3,
-      max_login_attempts: 5,
-      lock_duration_minutes: 30,
-      two_factor_auth_enabled: false,
-      updated_by: adminUser.id,
-    },
-  });
+  if (!adminUser) {
+    // Trouver l'ID du statut actif
+    const activeStatus = await prisma.reference_data.findFirst({
+      where: { 
+        type: 'status',
+        code: 'active',
+        module: 'users'
+      }
+    });
 
-  // Créer la configuration de présence par défaut
-  await prisma.attendance_config.create({
-    data: {
-      work_start_time: new Date('1970-01-01T09:00:00'),
-      work_end_time: new Date('1970-01-01T17:00:00'),
-      lunch_start_time: new Date('1970-01-01T12:00:00'),
-      lunch_end_time: new Date('1970-01-01T13:00:00'),
-      work_days: '1,2,3,4,5',
-      updated_by: adminUser.id,
-    },
-  });
+    // Trouver l'ID du rôle admin
+    const adminRole = await prisma.roles.findUnique({
+      where: { name: 'admin' }
+    });
 
-  // Créer quelques jours fériés de base
-  const currentYear = new Date().getFullYear();
-  await Promise.all([
-    prisma.holidays.create({
+    // Créer l'utilisateur admin
+    await prisma.users.create({
       data: {
-        date: new Date(`${currentYear}-01-01`),
-        name: 'Jour de l\'an',
-        description: 'Premier jour de l\'année',
-        type: 'legal',
-        repeats_yearly: true,
-        created_by: adminUser.id,
+        name: 'Administrateur',
+        email: adminEmail,
+        password: await hash('admin123', 10),
+        role: 'admin',
+        role_id: adminRole?.id,
+        status: 'active',
+        status_id: activeStatus?.id,
+        first_login: true
       },
-    }),
-    prisma.holidays.create({
-      data: {
-        date: new Date(`${currentYear}-05-01`),
-        name: 'Fête du Travail',
-        description: 'Jour férié national',
-        type: 'legal',
-        repeats_yearly: true,
-        created_by: adminUser.id,
-      },
-    }),
-    prisma.holidays.create({
-      data: {
-        date: new Date(`${currentYear}-07-14`),
-        name: 'Fête Nationale',
-        description: 'Jour férié national',
-        type: 'legal',
-        repeats_yearly: true,
-        created_by: adminUser.id,
-      },
-    }),
-  ]);
+    });
+    console.log('Admin user created');
+  }
 
-  console.log('Base de données initialisée avec succès !');
-  console.log('Comptes créés :');
-  console.log('Admin : admin@senator.com / Admin@123');
-  console.log('User : user@senator.com / User@123');
+  console.log('Seeding completed');
 }
 
 main()
   .catch((e) => {
-    console.error('Erreur lors de l\'initialisation de la base de données :', e);
+    console.error(e);
     process.exit(1);
   })
   .finally(async () => {
